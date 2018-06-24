@@ -1,0 +1,6 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^R-local\.*.txt$
+^R-local\.*.RData$
+^local-data/.*.RData$
+^local-data/.*.txt$

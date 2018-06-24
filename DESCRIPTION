@@ -1,0 +1,18 @@
+Package: TestPCMFit
+Type: Package
+Title: Simulated and real data tests for the PCMFit package
+Version: 0.2.1
+Authors@R: c(person("Venelin", "Mitov", email = "vmitov@gmail.com",
+                 role = c("aut", "cre", "cph")))
+Maintainer: The package maintainer <vmitov@gmail.com>
+Description: More about what it does (maybe more than one line)
+    Use four spaces when indenting paragraphs within the Description.
+License: GPL (>= 3.0)
+Encoding: UTF-8
+LazyData: true
+Depends:
+    R (>= 3.1.0),
+    PCMBase,
+    data.table,
+    PCMFit
+RoxygenNote: 6.0.1

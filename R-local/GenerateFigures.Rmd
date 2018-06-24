@@ -1,0 +1,416 @@
+---
+title: "GeneratedFigures"
+author: "Venelin Mitov"
+date: "6 June 2018"
+output: pdf_document
+keep_md: true
+---
+
+```{r setup, include=FALSE}
+library(PCMFit)
+library(TestPCMFit)
+library(ggtree)
+library(ggplot2)
+library(ggimage)
+library(cowplot)
+library(PCMBase)
+library(data.table)
+library(ROCR)
+library(fpc)
+library(knitr)
+library(rmarkdown)
+
+GeneratePCMModels()
+
+opts_chunk$set(dev='pdf', 
+               results="hide",
+               warning=FALSE,
+               dev.args=list(
+                 family="ArialMT", 
+                 pointsize=10,
+                 colormodel='cmyk'
+               ),
+               dpi=350, bg='white')
+
+options(PCMBase.Value.NA = -1e20)
+options(PCMBase.Lmr.mode = 11)
+
+options(PCMBase.Threshold.SV = 1e-6)
+options(PCMBase.Threshold.EV = 1e-5)
+options(PCMBase.Skip.Singular = FALSE)
+options(PCMBase.Threshold.Skip.Singular = 1e-4)
+
+evalFig1 <- TRUE
+evalFig2 <- FALSE
+evalFig3 <- FALSE
+evalFig4 <- FALSE
+```
+
+
+```{r load-Results-MammalData, include=FALSE}
+#load("../local-data/FinalResult_MixedGaussian_MammalData_id_1_t1_.RData")
+load("FinalResult_MixedGaussian_MammalData_id_1_t3_.RData")
+
+
+
+# the following need to be executed in order to be able to map the original node-labels in treeMammals
+# to the node-labels in fitMappings$tree, will not be needed with fitMappings from the new version of PCMFit
+
+tree <- treeMammals
+
+# segment long branches
+while(TRUE) {
+  points <- PCMTreeLocateMidpointsOnBranches(tree, 16)
+  if(length(points$nodes) == 0) {
+    break
+  } else {
+    tree <- PCMTreeInsertSingletons(tree, points$nodes, points$positions)
+  }
+}
+
+selectedTips <- dtMammals[node<=PCMTreeNumTips(treeMammals), 
+                          list(node = sample(node, size = .1*.N, replace = TRUE)), 
+                          by=Order][, node]
+# guarantee that Homo sapiens (node 305 is in the list)
+selectedTips <- unique(c(selectedTips, 305))
+
+#tree2 <- tree
+# PCMTreeSetLabels(tree2)
+# 
+# while(TRUE) {
+#   points <- PCMTreeLocateMidpointsOnBranches(tree2, 1)
+#   if(length(points$nodes) == 0) {
+#     break
+#   } else {
+#     tree <- PCMTreeInsertSingletons(tree2, points$nodes, points$positions)
+#   }
+# }
+
+#tree2 <- fitMappings$tree
+
+
+# fitMappings <- list(mainLoopHistory = mainLoopHistory, tableFits = tableFits,
+#                     tree = tree2, X = valuesMammals,
+#                     arguments = list(modelTypes = modelTypes, argsMixedGaussian = argsMixedGaussian))
+
+```
+
+```{r extract-inferred-objects-MammalData, include=FALSE}
+inferred <- RetrieveBestFitAIC(fitMappings)
+inferredModel <- inferred$inferredModel
+inferredTree <- attr(inferredModel, "tree")
+
+PCMTreeSetLabels(inferredTree, PCMTreeGetLabels(tree))
+
+colnames(valuesMammals) <- inferredTree$tip.label
+
+
+AIC(inferredModel)
+logLik(inferredModel)
+```
+
+```{r repeat-fit-on-inferredModel, eval=FALSE, include=FALSE}
+argsPCMParamLowerLimit <- list()
+argsPCMParamUpperLimit <- list()
+
+pcmI <- PCMInfoCpp(valuesMammals, inferredTree, inferredModel)
+
+system.time(for(i in 1:10) PCMLik(valuesMammals, inferredTree, inferredModel, pcmI))
+
+
+bestFitRep <- PCMFit(valuesMammals, inferredTree, inferredModel,
+  metaIFun = PCMInfoCpp, positiveValueGuard = 1000,
+  argsPCMParamLowerLimit = argsPCMParamLowerLimit,
+  argsPCMParamUpperLimit = argsPCMParamUpperLimit,
+  argsConfigOptimAndMCMC = list(
+    nCallsOptim = 1000, genInitNumEvals = 2000000, genInitVerbose = FALSE),
+  verbose = TRUE)
+```
+
+```{r fig1-MammalBackBone-SetEpochs, include=FALSE, eval=evalFig1}
+tree3 <- PCMTreeExtractBackboneRegimes(inferredTree)
+
+epochs <- seq(5, max(PCMTreeNodeTimes(tree3)), by = 20)
+for(epoch in epochs) {
+  tree3 <- PCMTreeInsertSingletonsAtEpoch(tree3, epoch, minLength = 2)
+}
+```
+
+```{r fig1-MammalBackBone-calculate-means-variances-at-epochs, include=FALSE, eval=evalFig1}
+
+inferredMeans <- PCMMean(tree3, PCMApplyTransformation(inferredModel), internal = TRUE)
+inferredVars <- PCMVar(tree3, PCMApplyTransformation(inferredModel), internal = TRUE)$Wii
+
+```
+
+
+```{r fig1-MammalBackBone-SetParam, echo=FALSE, include=FALSE, eval=evalFig1}
+#PCMTreePlot(attr(inferred$inferredModel, "tree"), layout = 'fan', open.angle = 8, size=.25) + geom_nodelab(size = 2, angle = 20)
+
+#pl <- PlotSearchHistory(fitMappings)
+
+#MeanVecMammals <- PCMMean(inferred$tree, PCMApplyTransformation(inferred$inferredModel), inferred$inferredModel$X0)
+#VarMatMammals <- PCMVar(inferred$tree, PCMApplyTransformation(inferred$inferredModel))
+#VarMatMammals <- 0.5*(VarMatMammals + t(VarMatMammals))
+#mvtnorm::dmvnorm(as.vector(valuesMammals), as.vector(MeanVecMammals), VarMatMammals, log=TRUE)
+
+#range(eigen(VarMatMammals)$values)
+#hist(eigen(VarMatMammals)$values, breaks = 1000)
+#quantile(eigen(VarMatMammals)$values, probs = seq(0, 1, 0.01))
+
+
+
+
+R <- PCMNumRegimes(inferredModel)
+palette <- PCMColorPalette(PCMTreeNumUniqueRegimes(tree3), PCMTreeUniqueRegimes(tree3))
+
+k <- 2
+xlim <- range(valuesMammals[1, ]) + c(-1.5, -0)
+ylim <- range(valuesMammals[2, ]) + c(-1.5, 0.5)
+hjust <- -6
+vjust <- -0.3
+width <- 12
+height = 14
+numGridPoints <- 100
+roundDigits <- 3
+```
+
+
+```{r fig1-MammalBackBone-InsetsScatterPlots, include=FALSE, eval=evalFig1}
+dtTipRegimes <- PCMTreeDtNodeRegimes(inferredTree)[endNode <= PCMTreeNumTips(inferredTree)]
+dtTipRegimes[, lg_body:=valuesMammals[1, endNodeLab]]
+dtTipRegimes[, lg_brain:=valuesMammals[2, endNodeLab]]
+setkey(dtTipRegimes, endNodeLab)
+
+scatterPlotsTips <- lapply(tree3$tip.label, function(tip) {
+  tipRegime <- dtTipRegimes[list(tip), regime]
+  
+  mu <- dtTipRegimes[regime == tipRegime, colMeans(cbind(lg_body, lg_brain))]
+  Sigma <- dtTipRegimes[regime == tipRegime, cov(cbind(lg_body, lg_brain))]
+  slope <- Sigma[1,2]/Sigma[1,1]
+  intercept <- mu[2] - slope*mu[1]
+  labelSlope <- as.character(round(slope, 2))
+  ggplot(dtTipRegimes[regime == tipRegime]) +
+    coord_fixed(xlim = xlim, ylim = ylim, ratio = 1) +
+    geom_point(aes(x = lg_body, y = lg_brain), size = 1.2, color = palette[as.character(tipRegime)]) +
+    geom_vline(xintercept = mu[1], color = palette[as.character(tipRegime)], size = 1) +
+    geom_hline(yintercept = mu[2], color = palette[as.character(tipRegime)], size = 1) +
+    geom_abline(slope = slope, intercept = intercept, color = palette[as.character(tipRegime)], size = 1) +
+    scale_x_continuous(breaks = c(0, 2, 4, 6)) +
+    scale_y_continuous(breaks = c(-2, 0, 2, 4)) +
+    xlab(NULL) + ylab(NULL) +
+    theme_bw() +
+    theme(legend.position = "none", axis.line = element_line(size=1), axis.text = element_text(size = 14)) #+ 
+    #theme_transparent()
+})
+
+names(scatterPlotsTips) <- 1:PCMTreeNumTips(tree3)
+```
+
+```{r fig1-MammalBackBone-InsetsGaussianEllipses, include=FALSE, eval=evalFig1}
+ellipsePlots <- lapply(epochs, function(epoch) {
+  nodes <- PCMTreeNearestNodesToEpoch(tree3, epoch)
+  names(nodes) <- as.character(nodes)
+
+  insets <- lapply(names(nodes), function(n) {
+    i <- nodes[n]
+    regimei <- PCMTreeGetRegimeForNode(tree3, i)
+    mu <- inferredMeans[, i]
+    Sigma <- inferredVars[, (i-1)*k + (1:k)]
+    slope <- Sigma[1,2]/Sigma[1,1]
+    intercept <- mu[2] - slope*mu[1]
+    labelSlope <- as.character(round(slope, 2))
+    PCMPlotGaussianDensityGrid2D(mu, Sigma, xlim, ylim, xNumPoints = numGridPoints, yNumPoints = numGridPoints) +
+      geom_contour(color = palette[as.character(regimei)], size = 0.4) +
+      geom_vline(xintercept = mu[1], color = palette[as.character(regimei)], size = 1) +
+      geom_hline(yintercept = mu[2], color = palette[as.character(regimei)], size = 1) +
+      geom_abline(slope = slope, intercept = intercept, color = palette[as.character(regimei)], size = 1) +
+      # geom_text(x=4, y = slope*4+intercept+0.2, label=labelSlope, size = 4,
+      #           angle = atan(slope)*180/pi, parse = TRUE, color = palette[as.character(regimei)]) +
+      scale_x_continuous(breaks = c(0, 2, 4, 6)) +
+      #scale_x_continuous(sec.axis = dup_axis()) + 
+      scale_y_continuous(breaks = c(-2, 0, 2, 4)) +
+      #scale_y_continuous(sec.axis = dup_axis()) +
+      xlab(NULL) + ylab(NULL) +
+      theme_bw() +
+      theme(legend.position = "none",
+            axis.line = element_line(size=1), axis.text = element_text(size = 14)) #+
+      #theme_transparent()
+  })
+  names(insets) <- names(nodes)
+  insets
+})
+
+names(ellipsePlots) <- as.character(epochs)
+```
+
+
+```{r fig1-MammalBackBone-InsetsModelParams, include=FALSE, eval=evalFig1}
+modelTypes <- InferredModel_MixedGaussian()
+shortModelNames <- sapply(seq_along(modelTypes), function(i) {
+  substr(modelTypes[i], 1, 2)
+})
+
+shortModelNames <- paste0(shortModelNames, "[", LETTERS[1:length(modelTypes)], "]")
+names(shortModelNames) <- modelTypes
+
+
+startingNodesRegimesBackbone <- PCMTreeGetStartingNodesRegimes(tree3)
+# sapply(PCMTreeGetStartingNodesRegimes(tree3), function(node) {
+#   if(node == PCMTreeNumTips(tree3) + 1) {
+#     PCMTreeNumTips(tree3) + 1
+#   } else {
+#     tree$edge[which(tree3$edge[, 2] == node), 1]
+#   }
+# })
+
+modelParamPlots <- lapply(seq_along(startingNodesRegimesBackbone), function(i) {
+  nodei <- startingNodesRegimesBackbone[i]
+  regimei <- names(startingNodesRegimesBackbone)[i]
+  shortModelName <- shortModelNames[class(inferredModel[[regimei]])[1]]
+  if(regimei == 1) {
+    labelText <- 
+      paste0('paste("', regimei, ':", X[0]==',
+             PCMPlotMath(inferredModel[["X0"]], roundDigits = 3), ', ', shortModelName, ', " ", ',  
+             PCMPlotMath(PCMApplyTransformation(inferredModel[[regimei]]), roundDigits),
+                      ')')
+  } else {
+    labelText <- paste0('paste("', regimei, ': ", ' ,shortModelName, ', " ", ',  
+                      PCMPlotMath(PCMApplyTransformation(inferredModel[[regimei]]), roundDigits),
+                      ')')
+  }
+  
+  
+  p <- ggplot() +
+    geom_label(
+      aes(x = 0, y = 0,
+          label=labelText), size=6, fill = "white", color = palette[regimei], label.size = NA, parse = TRUE) +
+
+    coord_fixed(ratio = 1, xlim = c(-1.2, 1.2), ylim = c(-1, 1)) +
+    theme_nothing() #+ theme(plot.background = element_rect(fill="white"))
+  p
+})
+names(modelParamPlots) <- startingNodesRegimesBackbone
+```
+
+```{r fig1-MammalBackBone, fig.width=44, fig.height=36, eval=evalFig1}
+
+pl <- PCMTreePlot(tree3, size= 6) #+ geom_nodelab(size = 2, angle = 90)
+
+# insets scatter-plots of the tips belonging to each regime
+pl <- inset(pl, scatterPlotsTips, width=width, height = height, hjust = hjust - width, vjust = 1.1*vjust)
+
+# insets ellipse-plots at epochs
+for(insets in ellipsePlots) {
+  if(length(insets) > 0)
+    pl <- inset(pl, insets, width=width, height = height, hjust = hjust, vjust = 1.1*vjust)
+}
+
+hjustModelParamPlots <- hjust + 2 + c(-2, rep(0, length(modelParamPlots) - 1))
+pl <- inset(pl, modelParamPlots, width=4*width, height = height/2, hjust = hjustModelParamPlots, vjust = -0.7*vjust, x = "branch")
+
+dtNodeRegimesBackbone <- PCMTreeDtNodeRegimes(tree3)
+
+startingNodeRegimesReal <-
+  dtNodeRegimesBackbone[!sapply(endNodeLab, startsWith, "i_"), list(node = endNode[which.min(endTime)], lab = endNodeLab[which.min(endTime)]), by = regime]
+
+for(i in seq_len(nrow(startingNodeRegimesReal))) {
+  regimei <- startingNodeRegimesReal[i, regime]
+  nodei <- startingNodeRegimesReal[i, node]
+  labi <- startingNodeRegimesReal[i, lab]
+  if(as.character(regimei) == "1") {
+    labi <- PCMTreeGetLabels(tree)[PCMTreeNumTips(tree) + 1]
+  }
+  pl <- pl + geom_cladelabel(nodei, labi,
+                             color = palette[as.character(regimei)],
+                             offset=22 + 2*(as.integer(regimei)), barsize=4, angle=90,
+                             extend = .3,
+                             offset.text=.3, hjust=0.5, fontsize=8)
+}
+
+
+
+
+pl + xlab(label = "Time [Ma]") + theme_tree2() + theme(axis.line = element_line(size = 1), axis.text.x = element_text(size = 12), axis.ticks.length = unit(2, "mm"), axis.ticks = element_line(size = 2), axis.title= element_text(size = 16)) # + geom_nodelab(size = 3, angle = 90, alpha = .30)
+
+
+```
+
+```{r fig2-SearchHistoryMammalTree, fig.width=18.2, fig.height=19.5, eval=evalFig2}
+plList <- PlotSearchHistory(fitMappings, layout = 'fan', open.angle = 8, size=.25)
+cowplot::plot_grid(
+  plotlist = lapply(plList[!sapply(plList, is.null)],
+                    function(p) p + theme(plot.title = element_text(size=24))),
+  nrow=4, ncol = 3)
+```
+
+
+```{r fig3-PlotMammalTreeAndDataOrders, fig.width=36, fig.height=18, eval=evalFig3}
+orderNodes <- dtMammals[, unique(RootOrder)]
+
+listsDescendants <- PCMTreeListDescendants(treeMammals)
+dtNumsDescendants <- data.table(node = 1:PCMTreeNumNodes(treeMammals), 
+                                name = PCMTreeGetLabels(treeMammals),
+                                numDesc = sapply(listsDescendants, length))
+
+dtNumsDescendants[, lab:=""]
+dtNumsDescendants[node %in% selectedTips, 
+                  lab:=dtMammals[node %in% selectedTips, paste0(" ", node, ": ", SpeciesName, " ")]]
+dtNumsDescendants[numDesc >= 20 | (numDesc > 0 & node %in% orderNodes), lab:=name]
+
+
+treeMammalsOrderRegimes <- PCMTreeSetRegimes(treeMammals, orderNodes, inplace = FALSE)
+
+
+plTree <- PCMTreePlot(treeMammalsOrderRegimes, layout = 'fan', open.angle = 8, size=1, alpha=.6)
+plTree <- plTree %<+% dtNumsDescendants
+
+plTree <- plTree + geom_nodelab(aes(label = lab), size = 6) +
+  geom_tiplab2(aes(label = lab), size = 5) + theme(plot.margin = margin(10, 10, 10, 10, "mm"))
+
+plData <- PCMPlotTraitData2D(valuesMammals, treeMammalsOrderRegimes, 
+                             labeledTips = selectedTips, sizeLabeledTips=6) +
+  theme_bw() + theme(legend.position = "none") + 
+  xlab(label = "lg(body mass [g])") + ylab(label = "lg(brain mass [g])") + 
+  theme(axis.line = element_line(size = 1.6), 
+        axis.text = element_text(size = 22), 
+        axis.title = element_text(size = 28))
+
+cowplot::plot_grid(plTree, plData, nrow = 1)
+```
+
+```{r fig4-PlotMammalTreeAndDataInferedClusters, fig.width=36, fig.height=18, eval=evalFig4}
+orderNodes <- dtMammals[, unique(RootOrder)]
+orderNodeNames <- PCMTreeGetLabels(treeMammals)[orderNodes]
+
+plTree <- PCMTreePlot(inferredTree, layout = 'fan', open.angle = 8, size=1, alpha=.6)
+
+
+listsDescendants <- PCMTreeListDescendants(inferredTree)
+dtNumsDescendants <- data.table(node = 1:PCMTreeNumNodes(inferredTree), 
+                                name = PCMTreeGetLabels(inferredTree),
+                                numDesc = sapply(listsDescendants, length))
+
+dtNumsDescendants[, lab:=""]
+dtNumsDescendants[node %in% selectedTips, 
+                  lab:=dtMammals[node %in% selectedTips, paste0(" ", node, ": ", SpeciesName, " ")]]
+dtNumsDescendants[(!sapply(name, startsWith, "i_") & numDesc >= 20) | 
+                    (numDesc > 0 & name %in% orderNodeNames), lab:=name]
+
+plTree <- plTree %<+% dtNumsDescendants
+
+
+plTree <- plTree + geom_nodelab(aes(label = lab), size = 6) +
+  geom_tiplab2(aes(label = lab), size = 5) +
+  theme(plot.margin = margin(10, 10, 10, 10, "mm"))
+
+plData <- PCMPlotTraitData2D(valuesMammals, inferredTree, 
+                             labeledTips = selectedTips, sizeLabeledTips = 6) +
+  theme_bw() + theme(legend.position = "none") + 
+  xlab(label = "lg(body mass [g])") + ylab(label = "lg(brain mass [g])") + 
+  theme(axis.line = element_line(size = 1.6),
+        axis.text = element_text(size = 22), 
+        axis.title = element_text(size = 28))
+
+cowplot::plot_grid(plTree, plData, nrow = 1)
+```
