@@ -1,6 +1,6 @@
-
-GeneratePCMModels <- function() {
-  listParameterizationsBM <- list(
+#' List of possible BM parameterizations
+ListParameterizationsBM <- function() {
+  list(
     X0 = list(
       c("VectorParameter", "_Omitted")
     ),
@@ -17,8 +17,11 @@ GeneratePCMModels <- function() {
       c("MatrixParameter", "_ScalarDiagonal", "_WithNonNegativeDiagonal"),
       c("MatrixParameter", "_Omitted"))
   )
+}
 
-  listParameterizationsOU <- list(
+#' List of possible OU parameterizations
+ListParameterizationsOU <- function() {
+  list(
     X0 = list(
       c("VectorParameter", "_Omitted")),
 
@@ -51,56 +54,111 @@ GeneratePCMModels <- function() {
       c("MatrixParameter", "_ScalarDiagonal", "_WithNonNegativeDiagonal"),
       c("MatrixParameter", "_Omitted"))
   )
-
-  listParameterizationsDOU <- list(
-    X0 = list(
-      c("VectorParameter", "_Omitted")),
-
-    H1 = list(
-      c("MatrixParameter", "_Schur", "_WithNonNegativeDiagonal", "_Transformable"),
-      c("MatrixParameter", "_Schur", "_UpperTriangularWithDiagonal", "_WithNonNegativeDiagonal", "_Transformable"),
-      c("MatrixParameter", "_Schur", "_Diagonal", "_WithNonNegativeDiagonal", "_Transformable"),
-      c("MatrixParameter", "_Schur", "_ScalarDiagonal", "_WithNonNegativeDiagonal", "_Transformable"),
-
-      c("MatrixParameter", "_Schur", "_WithNonNegativeDiagonal", "_Transformable", "_Global"),
-      c("MatrixParameter", "_Schur", "_UpperTriangularWithDiagonal", "_WithNonNegativeDiagonal", "_Transformable", "_Global"),
-      c("MatrixParameter", "_Schur", "_Diagonal", "_WithNonNegativeDiagonal", "_Transformable", "_Global"),
-      c("MatrixParameter", "_Schur", "_ScalarDiagonal", "_WithNonNegativeDiagonal", "_Transformable", "_Global")),
-
-    H2 = list(
-      c("MatrixParameter", "_Schur", "_WithNonNegativeDiagonal", "_Transformable"),
-      c("MatrixParameter", "_Schur", "_UpperTriangularWithDiagonal", "_WithNonNegativeDiagonal", "_Transformable"),
-      c("MatrixParameter", "_Schur", "_Diagonal", "_WithNonNegativeDiagonal", "_Transformable"),
-      c("MatrixParameter", "_Schur", "_ScalarDiagonal", "_WithNonNegativeDiagonal", "_Transformable"),
-
-      c("MatrixParameter", "_Schur", "_WithNonNegativeDiagonal", "_Transformable", "_Global"),
-      c("MatrixParameter", "_Schur", "_UpperTriangularWithDiagonal", "_WithNonNegativeDiagonal", "_Transformable", "_Global"),
-      c("MatrixParameter", "_Schur", "_Diagonal", "_WithNonNegativeDiagonal", "_Transformable", "_Global"),
-      c("MatrixParameter", "_Schur", "_ScalarDiagonal", "_WithNonNegativeDiagonal", "_Transformable", "_Global")),
-
-    Theta = list(
-      c("VectorParameter")),
-
-    Sigma_x = list(
-      c("MatrixParameter", "_UpperTriangularWithDiagonal", "_WithNonNegativeDiagonal"),
-      c("MatrixParameter", "_Diagonal", "_WithNonNegativeDiagonal"),
-      c("MatrixParameter", "_ScalarDiagonal", "_WithNonNegativeDiagonal"),
-
-      c("MatrixParameter", "_UpperTriangularWithDiagonal", "_WithNonNegativeDiagonal", "_Global"),
-      c("MatrixParameter", "_Diagonal", "_WithNonNegativeDiagonal", "_Global"),
-      c("MatrixParameter", "_ScalarDiagonal", "_WithNonNegativeDiagonal", "_Global")),
-
-    Sigmae_x = list(
-      c("MatrixParameter", "_UpperTriangularWithDiagonal", "_WithNonNegativeDiagonal"),
-      c("MatrixParameter", "_Diagonal", "_WithNonNegativeDiagonal"),
-      c("MatrixParameter", "_ScalarDiagonal", "_WithNonNegativeDiagonal"),
-      c("MatrixParameter", "_Omitted"))
-  )
-
-  PCMGenerateParameterizations(structure(0.0, class="BM"), listParameterizations = listParameterizationsBM)
-  PCMGenerateParameterizations(structure(0.0, class="OU"), listParameterizations = listParameterizationsOU)
 }
 
+GeneratePCMModels <- function() {
+  PCMGenerateParameterizations(structure(0.0, class="BM"), listParameterizations = ListParameterizationsBM())
+  PCMGenerateParameterizations(structure(0.0, class="OU"), listParameterizations = ListParameterizationsOU())
+}
+
+
+PCMParamLowerLimit.BM <- function(o, k, R, ...) {
+  o <- NextMethod()
+  k <- attr(o, "k", exact = TRUE)
+  R <- length(attr(o, "regimes", exact = TRUE))
+
+  if(is.Global(o$Sigma_x)) {
+    if(!is.Diagonal(o$Sigma_x)) {
+      o$Sigma_x[1, 2] <- -.0
+    }
+  } else {
+    if(!is.Diagonal(o$Sigma_x)) {
+      for(r in seq_len(R)) {
+        o$Sigma_x[1, 2, r] <- -.0
+      }
+    }
+  }
+  o
+}
+
+PCMParamUpperLimit.BM <- function(o, k, R, ...) {
+  o <- NextMethod()
+  k <- attr(o, "k", exact = TRUE)
+  R <- length(attr(o, "regimes", exact = TRUE))
+
+  if(is.Global(o$Sigma_x)) {
+    o$Sigma_x[1, 1] <- o$Sigma_x[2, 2] <- 1.0
+    if(!is.Diagonal(o$Sigma_x)) {
+      o$Sigma_x[1, 2] <- 1.0
+    }
+  } else {
+    for(r in seq_len(R)) {
+      o$Sigma_x[1, 1, r] <- o$Sigma_x[2, 2, r] <- 1.0
+      if(!is.Diagonal(o$Sigma_x)) {
+        o$Sigma_x[1, 2, r] <- 1.0
+      }
+    }
+  }
+  o
+}
+
+PCMParamLowerLimit.OU <- function(o, k, R, ...) {
+  o <- NextMethod()
+  k <- attr(o, "k", exact = TRUE)
+  R <- length(attr(o, "regimes", exact = TRUE))
+
+  if(is.Global(o$Theta)) {
+    o$Theta[1] <- 0.0
+    o$Theta[2] <- -1.2
+  } else {
+    for(r in seq_len(R)) {
+      o$Theta[1, r] <- 0.0
+      o$Theta[2, r] <- -1.2
+    }
+  }
+  if(is.Global(o$Sigma_x)) {
+    if(!is.Diagonal(o$Sigma_x)) {
+      o$Sigma_x[1, 2] <- -.0
+    }
+  } else {
+    if(!is.Diagonal(o$Sigma_x)) {
+      for(r in seq_len(R)) {
+        o$Sigma_x[1, 2, r] <- -.0
+      }
+    }
+  }
+  o
+}
+
+PCMParamUpperLimit.OU <- function(o, k, R, ...) {
+  o <- NextMethod()
+  k <- attr(o, "k", exact = TRUE)
+  R <- length(attr(o, "regimes", exact = TRUE))
+
+  if(is.Global(o$Theta)) {
+    o$Theta[1] <- 7.8
+    o$Theta[2] <- 3.8
+  } else {
+    for(r in seq_len(R)) {
+      o$Theta[1, r] <- 7.8
+      o$Theta[2, r] <- 3.8
+    }
+  }
+  if(is.Global(o$Sigma_x)) {
+    o$Sigma_x[1, 1] <- o$Sigma_x[2, 2] <- 1.0
+    if(!is.Diagonal(o$Sigma_x)) {
+      o$Sigma_x[1, 2] <- 1.0
+    }
+  } else {
+    for(r in seq_len(R)) {
+      o$Sigma_x[1, 1, r] <- o$Sigma_x[2, 2, r] <- 1.0
+      if(!is.Diagonal(o$Sigma_x)) {
+        o$Sigma_x[1, 2, r] <- 1.0
+      }
+    }
+  }
+  o
+}
 
 SimulatedModels <- function() {
   c(
@@ -190,8 +248,22 @@ ArgsMixedGaussian_ScalarOU <- function() {
 }
 
 InferredModel_MixedGaussian <- function() {
-  SimulatedModels()
+  c(
+    # BM; independent traits
+    "BM__Omitted_X0__Diagonal_WithNonNegativeDiagonal_Sigma_x__Omitted_Sigmae_x",
+    # BM; dependent traits
+    "BM__Omitted_X0__UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Sigma_x__Omitted_Sigmae_x",
+    # OU; independent traits (diagonal H and diagonal Sigma)
+    "OU__Omitted_X0__Schur_Diagonal_WithNonNegativeDiagonal_Transformable_H__Theta__Diagonal_WithNonNegativeDiagonal_Sigma_x__Omitted_Sigmae_x",
+    # OU; dependtent traits (diagonal H and non-diagonal Sigma)
+    "OU__Omitted_X0__Schur_Diagonal_WithNonNegativeDiagonal_Transformable_H__Theta__UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Sigma_x__Omitted_Sigmae_x",
+    # OU; dependent traits (Symmetric H and non-diagonal Sigma)
+    "OU__Omitted_X0__Schur_UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Transformable_H__Theta__UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Sigma_x__Omitted_Sigmae_x",
+    # OU; dependent traits with causality (non-symmetric H and non-diagonal Sigma - we omit this in this version of the package)
+    "OU__Omitted_X0__Schur_WithNonNegativeDiagonal_Transformable_H__Theta__UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Sigma_x__Omitted_Sigmae_x"
+  )
 }
+
 ArgsMixedGaussian_MixedGaussian <- function() {
   ArgsMixedGaussian_SimulatedModels()
 }

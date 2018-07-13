@@ -13,7 +13,7 @@ GeneratePCMModels()
 
 testResultData <- rbindlist(
   lapply(1:nrow(testData), function(i) {
-    resultFile <- paste0("local-data/FinalResult_MixedGaussian_testData_id_", i, "_t1_.RData")
+    resultFile <- paste0("../local-data/FinalResult_MixedGaussian_testData_id_", i, "_t1_.RData")
 
     if(file.exists(resultFile)) {
       cat("Loading ", resultFile, "\n")

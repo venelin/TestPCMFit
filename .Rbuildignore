@@ -1,6 +1,8 @@
 ^.*\.Rproj$
 ^\.Rproj\.user$
-^R-local\.*.txt$
-^R-local\.*.RData$
+^R-local/.*.txt$
+^R-local/.*.RData$
+^R-local/.*.pdf$
+^R-local/GenerateFigures_files$
 ^local-data/.*.RData$
 ^local-data/.*.txt$

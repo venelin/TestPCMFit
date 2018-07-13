@@ -20,23 +20,6 @@ if(length(args) > 0) {
   id <- 1
 }
 
-# in t3, we used the default limits for the parameters Theta and Sigma_x
-# in t4, these limits were ovewritten using methods PCMParamUpperLimit and PCMParamLowerLimit for
-# the OU and BM classes (using the version 0.2.2 of TestPCMFit); Also model 6 (asymetric H) was removed;
-# in t5, limits were kept as in t4 but the following parameters were changed as follows
-# sdJitterAllRegimeFits = 0.05, sdJitterRootRegimeFit = 0.05 (previous values were 0.5).
-# in t6, everything was as in t5, but model 6 was included again in the candidate models. This produced AIC=-237,
-# but some clades were still not well fit
-#
-# in t7, everything was as in t6, but the parameters of the Optim-calls were increased in order to diminish the risk of
-# getting stuck in local optima:
-#   argsConfigOptimAndMCMC1 = list(nCallsOptim = 1000, genInitNumEvals = 1000000, genInitVerbose = FALSE),
-#   argsConfigOptimAndMCMC2 = list(nCallsOptim = 20, genInitNumEvals = 4000, genInitVerbose = FALSE),
-#
-#   sdJitterAllRegimeFits = 0.01, sdJitterRootRegimeFit = 0.01,
-
-prefixFiles = paste0("MixedGaussian_MammalData_id_", id, "_t7_")
-
 if(!exists("cluster") || is.null(cluster)) {
   if(require(doMPI)) {
     # using MPI cluster as distributed node cluster (possibly running on a cluster)
@@ -50,7 +33,6 @@ if(!exists("cluster") || is.null(cluster)) {
     doParallel::registerDoParallel(cluster)
   }
 }
-
 
 tableFits <- NULL
 # try using a previously stored tableFits from a previous run that was interupted
@@ -80,7 +62,8 @@ if(file.exists(fileCurrentResults)) {
 }
 
 
-modelTypes <- InferredModel_MixedGaussian()
+# reduce the set of models to OU models only.
+modelTypes <- InferredModel_MixedGaussian()[3:6]
 argsMixedGaussian <- ArgsMixedGaussian_MixedGaussian()
 argsPCMParamLowerLimit <- list()
 argsPCMParamUpperLimit <- list()
@@ -109,7 +92,7 @@ fitMappings <- PCMFitModelMappings(
   generatePCMModelsFun = GeneratePCMModels,
   metaIFun = PCMInfoCpp, positiveValueGuard = 1000,
 
-  tableFits = tableFits,
+  tableFitsPrev = tableFits,
 
   prefixFiles = prefixFiles,
 
@@ -118,15 +101,16 @@ fitMappings <- PCMFitModelMappings(
   argsMixedGaussian = argsMixedGaussian,
   argsPCMParamLowerLimit = argsPCMParamLowerLimit,
   argsPCMParamUpperLimit = argsPCMParamUpperLimit,
-  argsConfigOptimAndMCMC1 = list(nCallsOptim = 1000, genInitNumEvals = 1000000, genInitVerbose = FALSE),
-  argsConfigOptimAndMCMC2 = list(nCallsOptim = 20, genInitNumEvals = 4000, genInitVerbose = FALSE),
+  argsConfigOptimAndMCMC1 = list(nCallsOptim = 400, genInitNumEvals = 200000, genInitVerbose = FALSE),
+  argsConfigOptimAndMCMC2 = list(nCallsOptim = 10, genInitNumEvals = 4000, genInitVerbose = FALSE),
 
   numJitterAllRegimeFits = 1000, numJitterRootRegimeFit = 1000,
-  sdJitterAllRegimeFits = 0.01, sdJitterRootRegimeFit = 0.01,
+  sdJitterAllRegimeFits = 0.05, sdJitterRootRegimeFit = 0.05,
 
   printFitVectorsToConsole = TRUE,
   doParallel = TRUE,
   verbose = TRUE,
+  verboseComposeMixedGaussianFromFits = TRUE,
   verboseAdaptArgsConfigOptimAndMCMC = TRUE)
 
 save(fitMappings, file = paste0("FinalResult_", prefixFiles, ".RData"))

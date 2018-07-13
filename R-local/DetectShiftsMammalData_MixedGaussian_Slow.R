@@ -20,7 +20,25 @@ if(length(args) > 0) {
   id <- 1
 }
 
-prefixFiles = paste0("MixedGaussian_MammalData_Rep2_id_", id, "_t4_")
+# in t3, we used the default limits for the parameters Theta and Sigma_x
+# in t4, these limits were ovewritten using methods PCMParamUpperLimit and PCMParamLowerLimit for
+# the OU and BM classes (using the version 0.2.2 of TestPCMFit); Also model 6 (asymetric H) was removed;
+# in t5, limits were kept as in t4 but the following parameters were changed as follows
+# sdJitterAllRegimeFits = 0.05, sdJitterRootRegimeFit = 0.05 (previous values were 0.5).
+# in t6, everything was as in t5, but model 6 was included again in the candidate models. This produced AIC=-237,
+# but some clades were still not well fit
+#
+# in t7, everything was as in t6, but the parameters of the Optim-calls were increased in order to diminish the risk of
+# getting stuck in local optima:
+#   argsConfigOptimAndMCMC1 = list(nCallsOptim = 1000, genInitNumEvals = 1000000, genInitVerbose = FALSE),
+#   argsConfigOptimAndMCMC2 = list(nCallsOptim = 20, genInitNumEvals = 4000, genInitVerbose = FALSE),
+#
+#   sdJitterAllRegimeFits = 0.01, sdJitterRootRegimeFit = 0.01,
+# in t8 (Slow), everything is like in t7 except the line 
+#   argsConfigOptimAndMCMC2 = list(nCallsOptim = 100, genInitNumEvals = 100000, genInitVerbose = FALSE),
+
+prefixFiles = paste0("MixedGaussian_MammalData_id_", id, "_t8_")
+prefixFiles_t7 = paste0("MixedGaussian_MammalData_id_", id, "_t7_")
 
 if(!exists("cluster") || is.null(cluster)) {
   if(require(doMPI)) {
@@ -39,13 +57,13 @@ if(!exists("cluster") || is.null(cluster)) {
 
 tableFits <- NULL
 # try using a previously stored tableFits from a previous run that was interupted
-fileCurrentResults <- paste0("CurrentResults_", prefixFiles, ".RData")
+fileCurrentResults <- paste0("CurrentResults_", prefixFiles_t7, ".RData")
 if(file.exists(fileCurrentResults)) {
   cat("Loading previously stored tableFits from file", fileCurrentResults, "...\n")
   load(fileCurrentResults)
 
 
-  tempFiles <- list.files(pattern = paste0("^", prefixFiles, ".*.RData"))
+  tempFiles <- list.files(pattern = paste0("^", prefixFiles_t7, ".*.RData"))
   if(length(tempFiles) > 0) {
     cat("Loading previously stored tableFits from temporary files (", toString(tempFiles), ")...\n")
     tableFitsTempFiles <- rbindlist(
@@ -56,6 +74,8 @@ if(file.exists(fileCurrentResults)) {
     tableFits <- rbindlist(list(tableFits, tableFitsTempFiles))
   }
 
+  # use the clade-fits only
+  tableFits <- tableFits[treeEDExpression != "tree"]
   setkey(tableFits, hashCodeTree,hashCodeStartingNodesRegimesLabels,hashCodeMapping)
 
   tableFits <- unique(tableFits, by = key(tableFits))
@@ -70,9 +90,7 @@ argsMixedGaussian <- ArgsMixedGaussian_MixedGaussian()
 argsPCMParamLowerLimit <- list()
 argsPCMParamUpperLimit <- list()
 
-
 options(PCMBase.Value.NA = -1e20)
-options(PCMBase.Threshold.EV = 1e-6)
 options(PCMBase.Lmr.mode = 11)
 
 print(PCMOptions())
@@ -106,13 +124,15 @@ fitMappings <- PCMFitModelMappings(
   argsPCMParamLowerLimit = argsPCMParamLowerLimit,
   argsPCMParamUpperLimit = argsPCMParamUpperLimit,
   argsConfigOptimAndMCMC1 = list(nCallsOptim = 1000, genInitNumEvals = 1000000, genInitVerbose = FALSE),
-  argsConfigOptimAndMCMC2 = list(nCallsOptim = 10, genInitNumEvals = 2000, genInitVerbose = FALSE),
+  argsConfigOptimAndMCMC2 = list(nCallsOptim = 100, genInitNumEvals = 100000, genInitVerbose = FALSE),
 
   numJitterAllRegimeFits = 1000, numJitterRootRegimeFit = 1000,
+  sdJitterAllRegimeFits = 0.01, sdJitterRootRegimeFit = 0.01,
 
   printFitVectorsToConsole = TRUE,
   doParallel = TRUE,
-  verbose = TRUE)
+  verbose = TRUE,
+  verboseAdaptArgsConfigOptimAndMCMC = TRUE)
 
 save(fitMappings, file = paste0("FinalResult_", prefixFiles, ".RData"))
 

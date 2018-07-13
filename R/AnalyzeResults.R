@@ -20,7 +20,9 @@ RetrieveTrueFromTestData <- function(i) {
 }
 
 is.BM <- function(x) as.double(x <= 2)
+is.OU <- function(x) as.double(x >= 3)
 is.Uncorrelated <- function(x) as.double(x %in% c(1, 3))
+is.Correlated <- function(x) as.double(x %in% c(2, 4, 5, 6))
 is.NonDiagonalH <- function(x) as.double(x > 4)
 is.NonSymmetricH <- function(x) as.double(x == 6)
 

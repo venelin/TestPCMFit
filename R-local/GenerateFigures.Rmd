@@ -7,30 +7,33 @@ keep_md: true
 ---
 
 ```{r setup, include=FALSE}
+library(PCMBase)
 library(PCMFit)
 library(TestPCMFit)
 library(ggtree)
 library(ggplot2)
 library(ggimage)
 library(cowplot)
-library(PCMBase)
 library(data.table)
 library(ROCR)
 library(fpc)
 library(knitr)
 library(rmarkdown)
+library(lmtest)
+library(xtable)
+library(mvtnorm)
 
 GeneratePCMModels()
 
 opts_chunk$set(dev='pdf', 
-               results="hide",
+               #results="hide",
                warning=FALSE,
                dev.args=list(
                  family="ArialMT", 
                  pointsize=10,
-                 colormodel='cmyk'
+                 colormodel='rgb'
                ),
-               dpi=350, bg='white')
+               dpi=600, bg='white')
 
 options(PCMBase.Value.NA = -1e20)
 options(PCMBase.Lmr.mode = 11)
@@ -40,139 +43,223 @@ options(PCMBase.Threshold.EV = 1e-5)
 options(PCMBase.Skip.Singular = FALSE)
 options(PCMBase.Threshold.Skip.Singular = 1e-4)
 
-evalFig1 <- TRUE
-evalFig2 <- FALSE
+evalFig1 <- FALSE
+evalFig2 <- TRUE
+evalFig2.1 <- FALSE
 evalFig3 <- FALSE
 evalFig4 <- FALSE
+evalFig5 <- FALSE
+evalFig6 <- FALSE
+evalFig6.2 <- FALSE
+evalFig7.1 <- TRUE
+evalFig8 <- FALSE
+evalFig8.2 <- FALSE
+evalFig9 <- TRUE
 ```
 
 
-```{r load-Results-MammalData, include=FALSE}
+```{r load-Results-MammalData, include=FALSE, eval=TRUE}
 #load("../local-data/FinalResult_MixedGaussian_MammalData_id_1_t1_.RData")
-load("FinalResult_MixedGaussian_MammalData_id_1_t3_.RData")
+#load("FinalResult_MixedGaussian_MammalData_id_1_t3_.RData")
+#load("FinalResult_MixedGaussian_MammalData_id_1_t4_.RData")
+load("FinalResult_MixedGaussian_MammalData_id_1_t6_.RData")
+#load("FinalResult_MixedGaussian_MammalData_id_1_t7_.RData")
+load("Result_FineTuning_BestFit_MammalData_t1.RData")
 
 
-
-# the following need to be executed in order to be able to map the original node-labels in treeMammals
-# to the node-labels in fitMappings$tree, will not be needed with fitMappings from the new version of PCMFit
-
-tree <- treeMammals
-
-# segment long branches
-while(TRUE) {
-  points <- PCMTreeLocateMidpointsOnBranches(tree, 16)
-  if(length(points$nodes) == 0) {
-    break
-  } else {
-    tree <- PCMTreeInsertSingletons(tree, points$nodes, points$positions)
-  }
-}
-
+tree <- fitMappings$treeOriginal
 selectedTips <- dtMammals[node<=PCMTreeNumTips(treeMammals), 
-                          list(node = sample(node, size = .1*.N, replace = TRUE)), 
+                          list(node = sample(node, size = .25*.N, replace = TRUE)), 
                           by=Order][, node]
 # guarantee that Homo sapiens (node 305 is in the list)
 selectedTips <- unique(c(selectedTips, 305))
 
-#tree2 <- tree
-# PCMTreeSetLabels(tree2)
-# 
-# while(TRUE) {
-#   points <- PCMTreeLocateMidpointsOnBranches(tree2, 1)
-#   if(length(points$nodes) == 0) {
-#     break
-#   } else {
-#     tree <- PCMTreeInsertSingletons(tree2, points$nodes, points$positions)
-#   }
-# }
-
-#tree2 <- fitMappings$tree
-
-
-# fitMappings <- list(mainLoopHistory = mainLoopHistory, tableFits = tableFits,
-#                     tree = tree2, X = valuesMammals,
-#                     arguments = list(modelTypes = modelTypes, argsMixedGaussian = argsMixedGaussian))
-
 ```
 
-```{r extract-inferred-objects-MammalData, include=FALSE}
-inferred <- RetrieveBestFitAIC(fitMappings)
-inferredModel <- inferred$inferredModel
+```{r linreg-brain-body-global-uncorrected, include=TRUE}
+cfLSRUncorrected <- coef(lm(valuesMammals[2,]~valuesMammals[1,]))
+slopeGlobal <- cfLSRUncorrected[2]
+interceptGlobal <- cfLSRUncorrected[1]
+muGlobal <- rowMeans(valuesMammals)
+```
+
+```{r extract-inferred-objects-MammalData, include=FALSE, eval=TRUE}
+#inferred <- RetrieveBestFitAIC(fitMappings, rank = 1)
+#inferredModel <- inferred$inferredModel
+inferredModel <- finalModel
+
+# the regimes in inferredModel are integers but PCMInfo needs to match them against
+# their character equivalents in the pruned tree. Without the following conversion
+# there was mismatch between ellipse-plots and model parameters.
+#attr(inferredModel, "regimes") <- as.character(attr(inferredModel, "regimes"))
+
 inferredTree <- attr(inferredModel, "tree")
 
 PCMTreeSetLabels(inferredTree, PCMTreeGetLabels(tree))
 
 colnames(valuesMammals) <- inferredTree$tip.label
 
+# 
+print(AIC(inferredModel))
+print(logLik(inferredModel))
 
-AIC(inferredModel)
-logLik(inferredModel)
+modelTypes <- InferredModel_MixedGaussian()
+shortModelNames <- sapply(seq_along(modelTypes), function(i) {
+  substr(modelTypes[i], 1, 2)
+})
+
+shortModelNames <- paste0(shortModelNames, "[", LETTERS[1:length(modelTypes)], "]")
+names(shortModelNames) <- modelTypes
 ```
 
-```{r repeat-fit-on-inferredModel, eval=FALSE, include=FALSE}
-argsPCMParamLowerLimit <- list()
-argsPCMParamUpperLimit <- list()
+```{r extract-top-100-models-MammalData, include=FALSE, eval=FALSE}
+inferredList <- lapply(1:100, function(r) RetrieveBestFitAIC(fitMappings, rank = r))
+inferredTop100 <- data.table(
+  model=lapply(inferredList, function(o) {
+    model <- o$inferredModel
+    attr(model, "regimes") <- as.character(attr(model, "regimes"))
+    model
+  })
+)
+inferredTop100[, logLik:=sapply(model, logLik)]
+inferredTop100[, aic:=sapply(model, AIC)]
+inferredTop100[, X0.1:=sapply(model, function(.) .$X0[1])]
+inferredTop100[, X0.2:=sapply(model, function(.) .$X0[2])]
+inferredTop100[, treePruned:=lapply(seq_len(.N), function(i) {
+  tree <- attr(model[[i]], "tree") 
+  treePruned <- PCMTreeExtractBackboneRegimes(tree)
+  epochs <- seq(15, max(PCMTreeNodeTimes(treePruned)), by = 25)
+  for(epoch in epochs) {
+    treePruned <- PCMTreeInsertSingletonsAtEpoch(treePruned, epoch, minLength = 2)
+  }
+  treePruned
+})]
 
-pcmI <- PCMInfoCpp(valuesMammals, inferredTree, inferredModel)
+inferredTop100[, mI:=lapply(seq_len(.N), function(i) {
+  mI <- PCMInfo(NULL, treePruned[[i]], model[[i]])
+  mI$r <- as.integer(treePruned[[i]]$edge.regime)
+  mI
+})]
 
-system.time(for(i in 1:10) PCMLik(valuesMammals, inferredTree, inferredModel, pcmI))
+inferredTop100[, inferredMeans:=lapply(seq_len(.N), function(i) {
+  PCMMean(treePruned[[i]], PCMApplyTransformation(model[[i]]), metaI=mI[[i]], internal = TRUE)
+})]
 
+inferredTop100[, inferredVars:=lapply(seq_len(.N), function(i) {
+  PCMVar(treePruned[[i]], PCMApplyTransformation(model[[i]]), metaI=mI[[i]], internal = TRUE)$Wii
+})]
 
-bestFitRep <- PCMFit(valuesMammals, inferredTree, inferredModel,
-  metaIFun = PCMInfoCpp, positiveValueGuard = 1000,
-  argsPCMParamLowerLimit = argsPCMParamLowerLimit,
-  argsPCMParamUpperLimit = argsPCMParamUpperLimit,
-  argsConfigOptimAndMCMC = list(
-    nCallsOptim = 1000, genInitNumEvals = 2000000, genInitVerbose = FALSE),
-  verbose = TRUE)
+inferredTop100[, slope0:=sapply(seq_len(.N), function(i) {
+  N <- PCMTreeNumTips(treePruned[[i]])
+  Sigma <- inferredVars[[i]][, (N+1)*2+(1:2)]
+  Sigma[1,2]/Sigma[1,1]
+})]
+
+inferredTop100[, intercept0:=sapply(seq_len(.N), function(i) {
+  N <- PCMTreeNumTips(treePruned[[i]])
+  mu <- inferredMeans[[i]][, (N+1)+1]
+  intercept <- mu[2] - slope0[i]*mu[1]
+})]
 ```
 
-```{r fig1-MammalBackBone-SetEpochs, include=FALSE, eval=evalFig1}
+
+
+```{r extract-10th-100-models-MammalData, include=FALSE, eval=FALSE}
+inferredList <- lapply(901:1000, function(r) RetrieveBestFitAIC(fitMappings, rank = r))
+inferred10th100 <- data.table(
+  model=lapply(inferredList, function(o) {
+    model <- o$inferredModel
+    attr(model, "regimes") <- as.character(attr(model, "regimes"))
+    model
+  })
+)
+inferred10th100[, logLik:=sapply(model, logLik)]
+inferred10th100[, aic:=sapply(model, AIC)]
+inferred10th100[, X0.1:=sapply(model, function(.) .$X0[1])]
+inferred10th100[, X0.2:=sapply(model, function(.) .$X0[2])]
+inferred10th100[, treePruned:=lapply(seq_len(.N), function(i) {
+  tree <- attr(model[[i]], "tree") 
+  treePruned <- PCMTreeExtractBackboneRegimes(tree)
+  epochs <- seq(15, max(PCMTreeNodeTimes(treePruned)), by = 25)
+  for(epoch in epochs) {
+    treePruned <- PCMTreeInsertSingletonsAtEpoch(treePruned, epoch, minLength = 2)
+  }
+  treePruned
+})]
+
+inferred10th100[, mI:=lapply(seq_len(.N), function(i) {
+  mI <- PCMInfo(NULL, treePruned[[i]], model[[i]])
+  mI$r <- as.integer(treePruned[[i]]$edge.regime)
+  mI
+})]
+
+inferred10th100[, inferredMeans:=lapply(seq_len(.N), function(i) {
+  PCMMean(treePruned[[i]], PCMApplyTransformation(model[[i]]), metaI=mI[[i]], internal = TRUE)
+})]
+
+inferred10th100[, inferredVars:=lapply(seq_len(.N), function(i) {
+  PCMVar(treePruned[[i]], PCMApplyTransformation(model[[i]]), metaI=mI[[i]], internal = TRUE)$Wii
+})]
+
+inferred10th100[, slope0:=sapply(seq_len(.N), function(i) {
+  N <- PCMTreeNumTips(treePruned[[i]])
+  Sigma <- inferredVars[[i]][, (N+1)*2+(1:2)]
+  Sigma[1,2]/Sigma[1,1]
+})]
+
+inferred10th100[, intercept0:=sapply(seq_len(.N), function(i) {
+  N <- PCMTreeNumTips(treePruned[[i]])
+  mu <- inferredMeans[[i]][, (N+1)+1]
+  intercept <- mu[2] - slope0[i]*mu[1]
+})]
+```
+
+```{r plot-inferred-linregs-top100, fig.width=10, fig.height=10, eval=FALSE}
+ggplot(inferredTop100) +
+  geom_point(aes(x=X0.1, y=X0.2)) +
+  geom_abline(aes(slope=slope0, intercept=intercept0)) +
+  coord_fixed(xlim = xlim, ylim = ylim, ratio = 1)
+```
+
+```{r plot-inferred-linregs-10th100, fig.width=10, fig.height=10, eval=FALSE}
+ggplot(inferred10th100) +
+  geom_point(aes(x=X0.1, y=X0.2)) +
+  geom_abline(aes(slope=slope0, intercept=intercept0)) +
+  coord_fixed(xlim = xlim, ylim = ylim, ratio = 1)
+```
+
+```{r fig1-MammalBackBone-SetEpochs, include=FALSE, eval=TRUE}
 tree3 <- PCMTreeExtractBackboneRegimes(inferredTree)
 
-epochs <- seq(5, max(PCMTreeNodeTimes(tree3)), by = 20)
+epochs <- seq(5, max(PCMTreeNodeTimes(tree3)), by = 26.66)
 for(epoch in epochs) {
   tree3 <- PCMTreeInsertSingletonsAtEpoch(tree3, epoch, minLength = 2)
 }
 ```
 
-```{r fig1-MammalBackBone-calculate-means-variances-at-epochs, include=FALSE, eval=evalFig1}
 
-inferredMeans <- PCMMean(tree3, PCMApplyTransformation(inferredModel), internal = TRUE)
-inferredVars <- PCMVar(tree3, PCMApplyTransformation(inferredModel), internal = TRUE)$Wii
-
-```
-
-
-```{r fig1-MammalBackBone-SetParam, echo=FALSE, include=FALSE, eval=evalFig1}
-#PCMTreePlot(attr(inferred$inferredModel, "tree"), layout = 'fan', open.angle = 8, size=.25) + geom_nodelab(size = 2, angle = 20)
-
-#pl <- PlotSearchHistory(fitMappings)
-
-#MeanVecMammals <- PCMMean(inferred$tree, PCMApplyTransformation(inferred$inferredModel), inferred$inferredModel$X0)
-#VarMatMammals <- PCMVar(inferred$tree, PCMApplyTransformation(inferred$inferredModel))
-#VarMatMammals <- 0.5*(VarMatMammals + t(VarMatMammals))
-#mvtnorm::dmvnorm(as.vector(valuesMammals), as.vector(MeanVecMammals), VarMatMammals, log=TRUE)
-
-#range(eigen(VarMatMammals)$values)
-#hist(eigen(VarMatMammals)$values, breaks = 1000)
-#quantile(eigen(VarMatMammals)$values, probs = seq(0, 1, 0.01))
-
-
-
-
+```{r fig1-MammalBackBone-SetParam, echo=FALSE, include=FALSE, eval=TRUE}
 R <- PCMNumRegimes(inferredModel)
 palette <- PCMColorPalette(PCMTreeNumUniqueRegimes(tree3), PCMTreeUniqueRegimes(tree3))
 
 k <- 2
 xlim <- range(valuesMammals[1, ]) + c(-1.5, -0)
-ylim <- range(valuesMammals[2, ]) + c(-1.5, 0.5)
-hjust <- -6
+ylim <- range(valuesMammals[2, ]) + c(-1.5, 1)
+hjust <- -10
 vjust <- -0.3
-width <- 12
-height = 14
+width <- 18 # 16.5
+height = 21.75 #19.8
+offsetAxis <- 0.5
 numGridPoints <- 100
+numSamplePoints <- 1000
 roundDigits <- 3
+```
+
+```{r fig1-MammalBackBone-calculate-means-variances-at-epochs, include=FALSE, eval=evalFig1}
+mI <- PCMInfo(NULL, tree3, inferredModel)
+mI$r <- as.integer(tree3$edge.regime)
+inferredMeans <- PCMMean(tree3, PCMApplyTransformation(inferredModel), metaI = mI, internal = TRUE)
+inferredVars <- PCMVar(tree3, PCMApplyTransformation(inferredModel), metaI = mI, internal = TRUE)$Wii
 ```
 
 
@@ -189,19 +276,28 @@ scatterPlotsTips <- lapply(tree3$tip.label, function(tip) {
   Sigma <- dtTipRegimes[regime == tipRegime, cov(cbind(lg_body, lg_brain))]
   slope <- Sigma[1,2]/Sigma[1,1]
   intercept <- mu[2] - slope*mu[1]
-  labelSlope <- as.character(round(slope, 2))
+  labelSlope <- as.character(round(slope*100))
   ggplot(dtTipRegimes[regime == tipRegime]) +
     coord_fixed(xlim = xlim, ylim = ylim, ratio = 1) +
-    geom_point(aes(x = lg_body, y = lg_brain), size = 1.2, color = palette[as.character(tipRegime)]) +
-    geom_vline(xintercept = mu[1], color = palette[as.character(tipRegime)], size = 1) +
-    geom_hline(yintercept = mu[2], color = palette[as.character(tipRegime)], size = 1) +
-    geom_abline(slope = slope, intercept = intercept, color = palette[as.character(tipRegime)], size = 1) +
+    
+    geom_vline(xintercept = muGlobal[1], color = "darkgrey", size = 1, linetype = 5) +
+    geom_hline(yintercept = muGlobal[2], color = "darkgrey", size = 1, linetype = 5) +
+    geom_abline(slope = slopeGlobal, intercept = interceptGlobal, color = "darkgrey", size = 1, linetype = 5) +
+    
+    geom_vline(xintercept = mu[1], color = palette[as.character(tipRegime)], size = 1, alpha = 0.8) +
+    geom_hline(yintercept = mu[2], color = palette[as.character(tipRegime)], size = 1, alpha = 0.8) +
+    geom_abline(slope = slope, intercept = intercept, color = palette[as.character(tipRegime)], size = 1, alpha = 0.8) +
+    geom_point(aes(x = lg_body, y = lg_brain), size = 1.8, color = palette[as.character(tipRegime)], alpha = 0.8) +
+    geom_text(x=6, y = slope * 6 + intercept + 0.9, 
+              label = labelSlope, size = 7,
+              angle = atan(slope)*180/pi, 
+              color = palette[as.character(tipRegime)]) +
+    
     scale_x_continuous(breaks = c(0, 2, 4, 6)) +
     scale_y_continuous(breaks = c(-2, 0, 2, 4)) +
     xlab(NULL) + ylab(NULL) +
     theme_bw() +
-    theme(legend.position = "none", axis.line = element_line(size=1), axis.text = element_text(size = 14)) #+ 
-    #theme_transparent()
+    theme(legend.position = "none", axis.line = element_line(size=1), axis.text = element_text(size = 14)) 
 })
 
 names(scatterPlotsTips) <- 1:PCMTreeNumTips(tree3)
@@ -219,23 +315,33 @@ ellipsePlots <- lapply(epochs, function(epoch) {
     Sigma <- inferredVars[, (i-1)*k + (1:k)]
     slope <- Sigma[1,2]/Sigma[1,1]
     intercept <- mu[2] - slope*mu[1]
-    labelSlope <- as.character(round(slope, 2))
-    PCMPlotGaussianDensityGrid2D(mu, Sigma, xlim, ylim, xNumPoints = numGridPoints, yNumPoints = numGridPoints) +
-      geom_contour(color = palette[as.character(regimei)], size = 0.4) +
-      geom_vline(xintercept = mu[1], color = palette[as.character(regimei)], size = 1) +
-      geom_hline(yintercept = mu[2], color = palette[as.character(regimei)], size = 1) +
-      geom_abline(slope = slope, intercept = intercept, color = palette[as.character(regimei)], size = 1) +
-      # geom_text(x=4, y = slope*4+intercept+0.2, label=labelSlope, size = 4,
-      #           angle = atan(slope)*180/pi, parse = TRUE, color = palette[as.character(regimei)]) +
+    labelSlope <- as.character(round(slope*100))
+    PCMPlotGaussianSample2D(mu, Sigma, numPoints = numSamplePoints) +
+      
+      geom_vline(xintercept = muGlobal[1], color = "darkgrey", size = 1, linetype = 5) +
+      geom_hline(yintercept = muGlobal[2], color = "darkgrey", size = 1, linetype = 5) +
+      geom_abline(slope = slopeGlobal, intercept = interceptGlobal, color = "darkgrey", size = 1, linetype = 5) +
+      
+      
+      geom_vline(xintercept = mu[1], color = palette[as.character(regimei)], size = 1, alpha = 0.8) +
+      geom_hline(yintercept = mu[2], color = palette[as.character(regimei)], size = 1, alpha = 0.8) +
+      geom_abline(slope = slope, intercept = intercept, color = palette[as.character(regimei)], size = 1, alpha = 0.8) +
+      
+      stat_ellipse(color = palette[as.character(regimei)], type = "norm", level = .95, size = 0.8, alpha = 0.8) +
+      #stat_ellipse(color = palette[as.character(regimei)], type = "norm", level = .5, size = 0.8, alpha = 0.8) +
+      coord_fixed(xlim = xlim, ylim = ylim, ratio = 1) +
+      
+      geom_text(x=6, y = slope * 6 + intercept + 0.9, 
+                label = labelSlope, size = 7,
+                angle = atan(slope)*180/pi, 
+                color = palette[as.character(regimei)]) +
+      
       scale_x_continuous(breaks = c(0, 2, 4, 6)) +
-      #scale_x_continuous(sec.axis = dup_axis()) + 
       scale_y_continuous(breaks = c(-2, 0, 2, 4)) +
-      #scale_y_continuous(sec.axis = dup_axis()) +
       xlab(NULL) + ylab(NULL) +
       theme_bw() +
       theme(legend.position = "none",
             axis.line = element_line(size=1), axis.text = element_text(size = 14)) #+
-      #theme_transparent()
   })
   names(insets) <- names(nodes)
   insets
@@ -246,56 +352,48 @@ names(ellipsePlots) <- as.character(epochs)
 
 
 ```{r fig1-MammalBackBone-InsetsModelParams, include=FALSE, eval=evalFig1}
-modelTypes <- InferredModel_MixedGaussian()
-shortModelNames <- sapply(seq_along(modelTypes), function(i) {
-  substr(modelTypes[i], 1, 2)
-})
-
-shortModelNames <- paste0(shortModelNames, "[", LETTERS[1:length(modelTypes)], "]")
-names(shortModelNames) <- modelTypes
-
 
 startingNodesRegimesBackbone <- PCMTreeGetStartingNodesRegimes(tree3)
-# sapply(PCMTreeGetStartingNodesRegimes(tree3), function(node) {
-#   if(node == PCMTreeNumTips(tree3) + 1) {
-#     PCMTreeNumTips(tree3) + 1
-#   } else {
-#     tree$edge[which(tree3$edge[, 2] == node), 1]
-#   }
-# })
 
 modelParamPlots <- lapply(seq_along(startingNodesRegimesBackbone), function(i) {
   nodei <- startingNodesRegimesBackbone[i]
   regimei <- names(startingNodesRegimesBackbone)[i]
   shortModelName <- shortModelNames[class(inferredModel[[regimei]])[1]]
-  if(regimei == 1) {
-    labelText <- 
-      paste0('paste("', regimei, ':", X[0]==',
-             PCMPlotMath(inferredModel[["X0"]], roundDigits = 3), ', ', shortModelName, ', " ", ',  
-             PCMPlotMath(PCMApplyTransformation(inferredModel[[regimei]]), roundDigits),
-                      ')')
-  } else {
-    labelText <- paste0('paste("', regimei, ': ", ' ,shortModelName, ', " ", ',  
+  labelText <- paste0('paste("', regimei, ': ", ' ,shortModelName, ', " ", ',  
                       PCMPlotMath(PCMApplyTransformation(inferredModel[[regimei]]), roundDigits),
                       ')')
-  }
-  
-  
   p <- ggplot() +
     geom_label(
-      aes(x = 0, y = 0,
-          label=labelText), size=6, fill = "white", color = palette[regimei], label.size = NA, parse = TRUE) +
-
+      aes(x = 0, y = 0, label=labelText), 
+      size=10, 
+      fill = "white", 
+      color = palette[regimei], 
+      label.size = NA, parse = TRUE) +
     coord_fixed(ratio = 1, xlim = c(-1.2, 1.2), ylim = c(-1, 1)) +
-    theme_nothing() #+ theme(plot.background = element_rect(fill="white"))
+    theme_nothing() 
   p
 })
+
 names(modelParamPlots) <- startingNodesRegimesBackbone
+
+X0Plot <- list(
+  ggplot() + 
+    geom_label(
+      aes(x = 0, y = 0, 
+          label=paste0('paste(X[0]==', PCMPlotMath(inferredModel[["X0"]], roundDigits = 3),')')), 
+      size=10, 
+      fill = "white", 
+      color = palette[1], 
+      label.size = NA, parse = TRUE) +
+      coord_fixed(ratio = 1, xlim = c(-1.2, 1.2), ylim = c(-1, 1)) +
+      theme_nothing() )
+names(X0Plot) <- startingNodesRegimesBackbone[1]
 ```
 
-```{r fig1-MammalBackBone, fig.width=44, fig.height=36, eval=evalFig1}
+# fig1-MammalBackBone, fig.width=48, fig.height=58, eval=evalFig1}
+```{r fig1-MammalBackBone, dev.args=list(colormodel="rgb"), dpi=600, fig.width=42, fig.height=58, eval=evalFig1}
 
-pl <- PCMTreePlot(tree3, size= 6) #+ geom_nodelab(size = 2, angle = 90)
+pl <- PCMTreePlot(tree3, size= 6, palette = palette) #+ geom_nodelab(size = 2, angle = 90)
 
 # insets scatter-plots of the tips belonging to each regime
 pl <- inset(pl, scatterPlotsTips, width=width, height = height, hjust = hjust - width, vjust = 1.1*vjust)
@@ -306,43 +404,177 @@ for(insets in ellipsePlots) {
     pl <- inset(pl, insets, width=width, height = height, hjust = hjust, vjust = 1.1*vjust)
 }
 
-hjustModelParamPlots <- hjust + 2 + c(-2, rep(0, length(modelParamPlots) - 1))
-pl <- inset(pl, modelParamPlots, width=4*width, height = height/2, hjust = hjustModelParamPlots, vjust = -0.7*vjust, x = "branch")
+hjustModelParamPlots <- hjust + 2 + c(-18, rep(0, length(modelParamPlots) - 1))
+pl <- inset(pl, modelParamPlots, width=4*width, height = height/2, 
+            hjust = hjustModelParamPlots, vjust = -0.7*vjust, 
+            x = "branch")
+pl <- inset(pl, X0Plot[1], width = width, height = height/2, 
+            hjust = hjust + 12, 
+            vjust = 0.8*vjust, x = "branch")
 
 dtNodeRegimesBackbone <- PCMTreeDtNodeRegimes(tree3)
 
 startingNodeRegimesReal <-
-  dtNodeRegimesBackbone[!sapply(endNodeLab, startsWith, "i_"), list(node = endNode[which.min(endTime)], lab = endNodeLab[which.min(endTime)]), by = regime]
+  dtNodeRegimesBackbone[
+    !sapply(endNodeLab, startsWith, "i_"), 
+    list(node = endNode[which.min(endTime)], lab = endNodeLab[which.min(endTime)]), by = regime]
 
+
+# Offsets are specific to the fit, so they have to be adjusted for other fits
+offsets <- startingNodeRegimesReal[, as.integer(regime)]
+names(offsets) <- startingNodeRegimesReal[, lab]
+
+offsets[c("Cetartiodactyla", "Microchiroptera", "Soricidae")] <- 2
+offsets[c("CricetidaeG1", "MuridaeG1", "Haplorrhini", "HystricognathiG1", "SciuridaeG1")] <- 3
+offsets[c("MarmotiniG1", "Cercopithecidae")] <- 4
+
+ 
 for(i in seq_len(nrow(startingNodeRegimesReal))) {
   regimei <- startingNodeRegimesReal[i, regime]
+  regimeLab <- startingNodeRegimesReal[i, lab]
   nodei <- startingNodeRegimesReal[i, node]
   labi <- startingNodeRegimesReal[i, lab]
+  # use Mammalia instead of Theria for the root
   if(as.character(regimei) == "1") {
     labi <- PCMTreeGetLabels(tree)[PCMTreeNumTips(tree) + 1]
   }
   pl <- pl + geom_cladelabel(nodei, labi,
                              color = palette[as.character(regimei)],
-                             offset=22 + 2*(as.integer(regimei)), barsize=4, angle=90,
+                             offset=32 + 4.2*offsets[regimeLab], 
+                             barsize=5, angle=90,
                              extend = .3,
-                             offset.text=.3, hjust=0.5, fontsize=8)
+                             offset.text=.3, hjust=0.5, fontsize=12)
 }
 
 
 
+ 
+pl <- pl +
+  geom_segment(aes(x = 0, y = 0 + offsetAxis, xend = 166.2, yend = 0 + offsetAxis), size = 2, color = "black") +
+  geom_segment(aes(x = 166.2 - 0, y = 0 + offsetAxis, xend = 166.2 - 0, yend = 0.1 + offsetAxis), size = 2, color = "black") + 
+  geom_text(aes(label = "0", x = 166.2 - 0, y = -0.2 + offsetAxis), size = 12, color = "black") + 
+  geom_segment(aes(x = 166.2 - 25, y = 0 + offsetAxis, xend = 166.2 - 25, yend = 0.1 + offsetAxis), size = 2, color = "black") + 
+  geom_text(aes(label = "-25", x = 166.2 - 25, y = -0.2 + offsetAxis), size = 12, color = "black") + 
+  geom_segment(aes(x = 166.2 - 50, y = 0 + offsetAxis, xend = 166.2 - 50, yend = 0.1 + offsetAxis), size = 2, color = "black") + 
+  geom_text(aes(label = "-50", x = 166.2 - 50, y = -0.2 + offsetAxis), size = 12, color = "black") + 
+  geom_segment(aes(x = 166.2 - 75, y = 0 + offsetAxis, xend = 166.2 - 75, yend = 0.1 + offsetAxis), size = 2, color = "black") + 
+  geom_text(aes(label = "-75", x = 166.2 - 75, y = -0.2 + offsetAxis), size = 12, color = "black") + 
+  geom_segment(aes(x = 166.2 - 100, y = 0 + offsetAxis, xend = 166.2 - 100, yend = 0.1 + offsetAxis), size = 2, color = "black") + 
+  geom_text(aes(label = "-100", x = 166.2 - 100, y = -0.2 + offsetAxis), size = 12, color = "black") + 
+  geom_segment(aes(x = 166.2 - 125, y = 0 + offsetAxis, xend = 166.2 - 125, yend = 0.1 + offsetAxis), size = 2, color = "black") + 
+  geom_text(aes(label = "-125", x = 166.2 - 125, y = -0.2 + offsetAxis), size = 12, color = "black") + 
+  geom_segment(aes(x = 166.2 - 150, y = 0 + offsetAxis, xend = 166.2 - 150, yend = 0.1 + offsetAxis), size = 2, color = "black") +
+  geom_text(aes(label = "-150", x = 166.2 - 150, y = -0.2 + offsetAxis), size = 12, color = "black") + 
+  geom_text(aes(label = "Time [Ma]", x = 166.2 - 82, y = -0.5 + offsetAxis), size = 16, color = "black") +
+  theme_transparent()
 
-pl + xlab(label = "Time [Ma]") + theme_tree2() + theme(axis.line = element_line(size = 1), axis.text.x = element_text(size = 12), axis.ticks.length = unit(2, "mm"), axis.ticks = element_line(size = 2), axis.title= element_text(size = 16)) # + geom_nodelab(size = 3, angle = 90, alpha = .30)
-
-
+pl
 ```
 
-```{r fig2-SearchHistoryMammalTree, fig.width=18.2, fig.height=19.5, eval=evalFig2}
-plList <- PlotSearchHistory(fitMappings, layout = 'fan', open.angle = 8, size=.25)
+```{r fig2-SearchHistoryMammalTree, fig.width=6.8, fig.height=11, eval=evalFig2}
+plList <- PlotSearchHistory(
+  fitMappings, layout = 'fan', open.angle = 2, size=.25,
+  sizeGreyNodepoints = 2.0, 
+  sizeColorNodepoints = 6, 
+  sizeBlackAllowedModelTypes = 2.0, 
+  sizeColorAllowedModelTypes = 2.8, 
+  sizeRankInQueue = 4.0,
+  vjustBlackAllowedModelTypes = -1.4,
+  vjustColorAllowedModelTypes = -1.8)
+
+plList <- plList[!sapply(plList, is.null)]
+
 cowplot::plot_grid(
-  plotlist = lapply(plList[!sapply(plList, is.null)],
-                    function(p) p + theme(plot.title = element_text(size=24))),
-  nrow=4, ncol = 3)
+  plotlist = lapply(plList[1:8],
+                    function(p) p + theme(plot.title = element_text(size=12))),
+  nrow=3, ncol = 2)
+
+cowplot::plot_grid(
+  plotlist = lapply(plList[9:13],
+                    function(p) p + theme(plot.title = element_text(size=12))),
+  nrow=3, ncol = 2)
+# 
+# cowplot::plot_grid(
+#   plotlist = lapply(plList[9:12],
+#                     function(p) p + theme(plot.title = element_text(size=18))),
+#   nrow=2, ncol = 2)
+# 
+# cowplot::plot_grid(
+#   plotlist = lapply(plList[13],
+#                     function(p) p + theme(plot.title = element_text(size=18))),
+#   nrow=2, ncol = 2)
 ```
+
+```{r fig2-1-SearchHistoryMammalTree, fig.width=14, fig.height=15, eval=evalFig2.1}
+plList <- PlotSearchHistory(
+  fitMappings, layout = 'fan', open.angle = 2, size=.25, alpha = .75,
+  sizeGreyNodepoints = 2.0, 
+  sizeColorNodepoints = 4, 
+  sizeBlackAllowedModelTypes = 2.0, 
+  sizeColorAllowedModelTypes = 2.8, 
+  sizeRankInQueue = 2.8,
+  vjustBlackAllowedModelTypes = -1.4,
+  vjustColorAllowedModelTypes = -1.8
+  )
+
+plList <- plList[!sapply(plList, is.null)]
+
+cowplot::plot_grid(
+  plotlist = lapply(plList[1:9],
+                    function(p) p + theme(plot.title = element_text(size=18))),
+  nrow=3, ncol = 3)
+# 
+# cowplot::plot_grid(
+#   plotlist = lapply(plList[5:8],
+#                     function(p) p + theme(plot.title = element_text(size=18))),
+#   nrow=2, ncol = 2)
+# 
+# cowplot::plot_grid(
+#   plotlist = lapply(plList[9:12],
+#                     function(p) p + theme(plot.title = element_text(size=18))),
+#   nrow=2, ncol = 2)
+# 
+# cowplot::plot_grid(
+#   plotlist = lapply(plList[13],
+#                     function(p) p + theme(plot.title = element_text(size=18))),
+#   nrow=2, ncol = 2)
+```
+
+```{r fig2-2-SearchHistoryMammalTree, fig.width=8, fig.height=8.5, eval=evalFig2.1}
+plList <- PlotSearchHistory(
+  fitMappings, layout = 'fan', open.angle = 2, size=.25, alpha = .75,
+  sizeGreyNodepoints = 2.0, 
+  sizeColorNodepoints = 8, 
+  sizeBlackAllowedModelTypes = 2.0, 
+  sizeColorAllowedModelTypes = 2.8, 
+  sizeRankInQueue = 5.0,
+  vjustBlackAllowedModelTypes = -1.4,
+  vjustColorAllowedModelTypes = -1.8
+  )
+
+plList <- plList[!sapply(plList, is.null)]
+
+cowplot::plot_grid(
+  plotlist = lapply(plList[c(1:2, 7:8)],
+                    function(p) p + theme(plot.title = element_text(size=18))),
+  nrow=2, ncol = 2)
+# 
+# cowplot::plot_grid(
+#   plotlist = lapply(plList[5:8],
+#                     function(p) p + theme(plot.title = element_text(size=18))),
+#   nrow=2, ncol = 2)
+# 
+# cowplot::plot_grid(
+#   plotlist = lapply(plList[9:12],
+#                     function(p) p + theme(plot.title = element_text(size=18))),
+#   nrow=2, ncol = 2)
+# 
+# cowplot::plot_grid(
+#   plotlist = lapply(plList[13],
+#                     function(p) p + theme(plot.title = element_text(size=18))),
+#   nrow=2, ncol = 2)
+```
+
 
 
 ```{r fig3-PlotMammalTreeAndDataOrders, fig.width=36, fig.height=18, eval=evalFig3}
@@ -379,38 +611,669 @@ plData <- PCMPlotTraitData2D(valuesMammals, treeMammalsOrderRegimes,
 cowplot::plot_grid(plTree, plData, nrow = 1)
 ```
 
-```{r fig4-PlotMammalTreeAndDataInferedClusters, fig.width=36, fig.height=18, eval=evalFig4}
+```{r fig4-PlotMammalTreeAndDataInferedClusters, fig.width=18, fig.height=36, eval=evalFig4}
 orderNodes <- dtMammals[, unique(RootOrder)]
+orderNodes <- orderNodes[!orderNodes <= PCMTreeNumTips(treeMammals)]
 orderNodeNames <- PCMTreeGetLabels(treeMammals)[orderNodes]
 
-plTree <- PCMTreePlot(inferredTree, layout = 'fan', open.angle = 8, size=1, alpha=.6)
+dtNodeRegimesInferred <- PCMTreeDtNodeRegimes(inferredTree)
+
+dtStartingNodeRegimesReal <-
+  dtNodeRegimesInferred[!sapply(endNodeLab, startsWith, "i_"), 
+                        list(node = endNode[which.min(endTime)], 
+                             label = endNodeLab[which.min(endTime)]), 
+                        by = regime]
+
+dtStartingNodeRegimesReal[
+  regime == 1, 
+  label:=PCMTreeGetLabels(inferredTree)[PCMTreeNumTips(inferredTree) + 1L]]
+
+dtLabeledNodes <- data.table(
+  node = 1:PCMTreeNumNodes(inferredTree), 
+  name = PCMTreeGetLabels(inferredTree))
+
+dtLabeledNodes <- merge(dtLabeledNodes, dtMammals[, list(node, SpeciesName)],  
+  by="node", all.x = TRUE)
+
+dtLabeledNodes[, labelTip:=""]
+dtLabeledNodes[, labelShiftNode:=""]
+dtLabeledNodes[, labelOrderNode:=""]
+
+dtLabeledNodes[
+  #node <= PCMTreeNumTips(inferredTree),
+  node %in% selectedTips,
+  labelTip:=paste0(" ", node, ": ", SpeciesName, " ")]
+
+dtLabeledNodes[
+  name %in% dtStartingNodeRegimesReal[, label], 
+  labelShiftNode:=name]
+
+dtLabeledNodes[
+  name %in% orderNodeNames, 
+  labelOrderNode:=name]
+
+dtLabeledNodes[, 
+               lab:=apply(cbind(labelTip, labelShiftNode, labelOrderNode, name), 1,
+                            function(labels) {
+                              if(labels[1] != "") 
+                                labels[1]
+                              else if(labels[2] != "") 
+                                labels[2] 
+                              else if(labels[3] != "") 
+                                labels[3]
+                              else if(!startsWith(labels[4], "i_") && is.na(as.integer(labels[4]))) 
+                                labels[4]
+                              else 
+                                ""
+                              })]
+
+dtLabeledNodes[, labSize:=0]
+dtLabeledNodes[labelTip != "", labSize:=10]
+dtLabeledNodes[labelShiftNode != "", labSize:=40]
+dtLabeledNodes[labelOrderNode != "", labSize:=60]
+dtLabeledNodes[node == PCMTreeNumTips(inferredTree) + 1, labSize:=80]
 
 
-listsDescendants <- PCMTreeListDescendants(inferredTree)
-dtNumsDescendants <- data.table(node = 1:PCMTreeNumNodes(inferredTree), 
-                                name = PCMTreeGetLabels(inferredTree),
-                                numDesc = sapply(listsDescendants, length))
 
-dtNumsDescendants[, lab:=""]
-dtNumsDescendants[node %in% selectedTips, 
-                  lab:=dtMammals[node %in% selectedTips, paste0(" ", node, ": ", SpeciesName, " ")]]
-dtNumsDescendants[(!sapply(name, startsWith, "i_") & numDesc >= 20) | 
-                    (numDesc > 0 & name %in% orderNodeNames), lab:=name]
+plTree <- PCMTreePlot(
+  inferredTree, palette = palette, layout = 'fan', open.angle = 8, size=1, alpha=.5)
 
-plTree <- plTree %<+% dtNumsDescendants
+plTree <- plTree %<+% dtLabeledNodes
 
-
-plTree <- plTree + geom_nodelab(aes(label = lab), size = 6) +
-  geom_tiplab2(aes(label = lab), size = 5) +
+plTree <- plTree + 
+  geom_nodelab(aes(label = lab, size=labSize)) +
+  geom_tiplab2(aes(label = lab, size=labSize)) +
   theme(plot.margin = margin(10, 10, 10, 10, "mm"))
 
-plData <- PCMPlotTraitData2D(valuesMammals, inferredTree, 
-                             labeledTips = selectedTips, sizeLabeledTips = 6) +
+plData <- PCMPlotTraitData2D(valuesMammals, inferredTree, palette = palette,
+                             labeledTips = selectedTips, sizeLabeledTips=5) +
   theme_bw() + theme(legend.position = "none") + 
   xlab(label = "lg(body mass [g])") + ylab(label = "lg(brain mass [g])") + 
-  theme(axis.line = element_line(size = 1.6),
+  theme(axis.line = element_line(size = 1.6), 
         axis.text = element_text(size = 22), 
         axis.title = element_text(size = 28))
 
-cowplot::plot_grid(plTree, plData, nrow = 1)
+
+cowplot::plot_grid(plTree, plData, nrow = 2, ncol = 1, labels = "AUTO")
+```
+
+```{r fig5-PlotMammalTreeInferredClusters, fig.width=16, fig.height=16, eval=evalFig5}
+orderNodes <- dtMammals[, unique(RootOrder)]
+orderNodes <- orderNodes[!orderNodes <= PCMTreeNumTips(treeMammals)]
+orderNodeNames <- PCMTreeGetLabels(treeMammals)[orderNodes]
+
+dtNodeRegimesInferred <- PCMTreeDtNodeRegimes(inferredTree)
+
+dtStartingNodeRegimesReal <-
+  dtNodeRegimesInferred[!sapply(endNodeLab, startsWith, "i_"), 
+                        list(node = endNode[which.min(endTime)], 
+                             label = endNodeLab[which.min(endTime)]), 
+                        by = regime]
+
+dtStartingNodeRegimesReal[
+  regime == 1, 
+  label:=PCMTreeGetLabels(inferredTree)[PCMTreeNumTips(inferredTree) + 1L]]
+
+dtLabeledNodes <- data.table(
+  node = 1:PCMTreeNumNodes(inferredTree), 
+  name = PCMTreeGetLabels(inferredTree))
+
+dtLabeledNodes <- merge(dtLabeledNodes, dtMammals[, list(node, SpeciesName)],  
+  by="node", all.x = TRUE)
+
+dtLabeledNodes[, labelTip:=""]
+dtLabeledNodes[, labelShiftNode:=""]
+dtLabeledNodes[, labelOrderNode:=""]
+
+dtLabeledNodes[
+  #node <= PCMTreeNumTips(inferredTree),
+  node %in% selectedTips,
+  labelTip:=paste0(" ", node, ": ", SpeciesName, " ")]
+
+dtLabeledNodes[
+  name %in% dtStartingNodeRegimesReal[, label], 
+  labelShiftNode:=name]
+
+dtLabeledNodes[
+  name %in% orderNodeNames, 
+  labelOrderNode:=name]
+
+dtLabeledNodes[, 
+               lab:=apply(cbind(labelTip, labelShiftNode, labelOrderNode, name), 1,
+                            function(labels) {
+                              if(labels[1] != "") 
+                                labels[1] 
+                              else if(labels[2] != "") 
+                                labels[2] 
+                              else if(labels[3] != "") 
+                                labels[3]
+                              else if(!startsWith(labels[4], "i_") && is.na(as.integer(labels[4]))) 
+                                labels[4]
+                              else 
+                                ""
+                              })]
+
+dtLabeledNodes[, labSize:=0]
+dtLabeledNodes[labelTip != "", labSize:=10]
+dtLabeledNodes[labelShiftNode != "", labSize:=20]
+dtLabeledNodes[labelOrderNode != "", labSize:=40]
+dtLabeledNodes[node == PCMTreeNumTips(inferredTree) + 1, labSize:=80]
+
+
+
+plTree <- PCMTreePlot(inferredTree, layout = 'fan', open.angle = 8, size=1, alpha=.6)
+
+plTree <- plTree %<+% dtLabeledNodes
+
+plTree <- plTree + 
+  geom_nodelab(aes(label = lab, size=labSize)) +
+  geom_tiplab2(aes(label = lab, size=labSize)) +
+  theme(plot.margin = margin(10, 10, 10, 10, "mm"))
+plTree
+```
+
+```{r fig6-PlotMammalTreeInferredClustersSmall, fig.width=12, fig.height=12, eval=evalFig6}
+# the order nodes are incorrect and probably not needed - we only want to 
+# say that they are different from the shift nodes except for a few.
+# use fig6.2 instead.
+orderNodes <- dtMammals[, unique(RootOrder)]
+orderNodes <- orderNodes[!orderNodes <= PCMTreeNumTips(treeMammals)]
+orderNodeNames <- PCMTreeGetLabels(treeMammals)[orderNodes]
+
+dtNodeRegimesInferred <- PCMTreeDtNodeRegimes(inferredTree)
+
+dtStartingNodeRegimesReal <-
+  dtNodeRegimesInferred[!sapply(endNodeLab, startsWith, "i_"), 
+                        list(node = endNode[which.min(endTime)], 
+                             label = endNodeLab[which.min(endTime)]), 
+                        by = regime]
+
+dtStartingNodeRegimesReal[
+  regime == 1, 
+  label:=PCMTreeGetLabels(inferredTree)[PCMTreeNumTips(inferredTree) + 1L]]
+
+dtLabeledNodes <- data.table(
+  node = 1:PCMTreeNumNodes(inferredTree), 
+  name = PCMTreeGetLabels(inferredTree))
+
+dtLabeledNodes <- merge(dtLabeledNodes, dtMammals[, list(node, SpeciesName)],  
+  by="node", all.x = TRUE)
+
+dtLabeledNodes[, labelTip:=""]
+dtLabeledNodes[, labelShiftNode:=""]
+dtLabeledNodes[, labelOrderNode:=""]
+
+dtLabeledNodes[
+  #node <= PCMTreeNumTips(inferredTree),
+  node %in% selectedTips,
+  labelTip:=paste0(" ", node, ": ", SpeciesName, " ")]
+
+dtLabeledNodes[
+  name %in% dtStartingNodeRegimesReal[, label], 
+  labelShiftNode:=name]
+
+dtLabeledNodes[
+  name %in% orderNodeNames, 
+  labelOrderNode:=name]
+
+dtLabeledNodes[, 
+               lab:=apply(cbind(labelTip, labelShiftNode, labelOrderNode, name), 1,
+                            function(labels) {
+                              if(labels[1] != "") 
+                                "" 
+                              else if(labels[2] != "") 
+                                labels[2] 
+                              else if(labels[3] != "") 
+                                labels[3]
+                              else if(!startsWith(labels[4], "i_") && is.na(as.integer(labels[4]))) 
+                                ""
+                              else 
+                                ""
+                              })]
+
+dtLabeledNodes[, labSize:=0]
+dtLabeledNodes[labelTip != "", labSize:=1]
+dtLabeledNodes[labelShiftNode != "", labSize:=4]
+dtLabeledNodes[labelOrderNode != "", labSize:=6]
+dtLabeledNodes[node == PCMTreeNumTips(inferredTree) + 1, labSize:=8]
+
+
+
+plTree <- PCMTreePlot(inferredTree, layout = 'fan', open.angle = 4, size=1, alpha=.5, palette = palette)
+
+plTree <- plTree %<+% dtLabeledNodes
+
+plTree <- plTree + 
+  geom_nodelab(aes(label = lab, size=labSize)) +
+  scale_size_continuous(range = c(0, 8)) +
+  theme_transparent()
+plTree
+```
+
+```{r fig6.2-PlotMammalTreeInferredClustersSmall, dev.args=list(colormodel="rgb"), fig.width=12, fig.height=12, eval=evalFig6.2}
+dtNodeRegimesInferred <- PCMTreeDtNodeRegimes(inferredTree)
+
+dtStartingNodeRegimesReal <- dtNodeRegimesInferred[
+  , 
+  list(
+    node = if(min(startTime) == 0.00) {
+      # special treatment for regime 1 needed
+      PCMTreeNumTips(inferredTree) + 1L
+    } else {
+      endNode[which.min(endTime)]
+    },
+    label = if(min(startTime) == 0.00) {
+      # special treatment for regime 1 needed
+      PCMTreeGetLabels(inferredTree)[PCMTreeNumTips(inferredTree) + 1L]
+    } else {
+      endNodeLab[which.min(endTime)]
+    }
+), 
+  by = regime
+]
+
+dtLabeledNodes <- data.table(
+  node = 1:PCMTreeNumNodes(inferredTree), 
+  name = PCMTreeGetLabels(inferredTree))
+
+dtLabeledNodes <- merge(dtLabeledNodes, dtMammals[, list(node, SpeciesName)],  
+  by="node", all.x = TRUE)
+
+dtLabeledNodes[, labelTip:=""]
+
+dtLabeledNodes[
+  #node <= PCMTreeNumTips(inferredTree),
+  node %in% selectedTips,
+  labelTip:=paste0(" ", node, ": ", SpeciesName, " ")]
+
+dtLabeledNodes <- merge(dtLabeledNodes, dtStartingNodeRegimesReal[, list(regime, node, labelShiftNode = label)], by="node", all.x = TRUE)
+dtLabeledNodes[is.na(labelShiftNode), labelShiftNode:=""]
+
+dtLabeledNodes[, 
+               lab:=apply(cbind(labelTip, 
+                                labelShiftNode, 
+                                name), 1,
+                            function(labels) {
+                              if(labels[1] != "") 
+                                "" 
+                              else if(labels[2] != "") 
+                                labels[2] 
+                              else if(!startsWith(labels[3], "i_") && is.na(as.integer(labels[3]))) 
+                                ""
+                              else 
+                                ""
+                              })]
+
+dtLabeledNodes[, labSize:=0]
+dtLabeledNodes[labelTip != "", labSize:=1]
+dtLabeledNodes[labelShiftNode != "", labSize:=4]
+dtLabeledNodes[labelShiftNode != "", labShiftRegime:=as.character(regime)]
+dtLabeledNodes[, shiftRegime:=as.logical(NA)]
+dtLabeledNodes[labelShiftNode != "", shiftRegime:=TRUE]
+dtLabeledNodes[node == PCMTreeNumTips(inferredTree) + 1, labSize:=8]
+
+plTree <- PCMTreePlot(inferredTree, layout = 'fan', open.angle = 20, size=1, palette = palette)
+
+plTree <- plTree %<+% dtLabeledNodes
+
+plTree <- plTree + 
+  #geom_nodelab(aes(label = lab, size=labSize)) +
+  geom_nodepoint(aes(shape=shiftRegime, color = labShiftRegime), fill="white", size=14, na.rm = TRUE) +
+  geom_text(aes(label=labShiftRegime, color = labShiftRegime), size=8) +
+  scale_shape_manual(values=21) +
+  scale_size_continuous(range = c(0, 8)) +
+  theme_transparent()
+plTree
+```
+
+
+```{r analyze-simulations, include=FALSE, eval=FALSE}
+testResultData <- rbindlist(
+  lapply(1:nrow(testData), function(i) {
+    resultFile <- paste0("../local-data/FinalResult_MixedGaussian_testData_id_", i, "_t1_.RData")
+
+    if(file.exists(resultFile)) {
+      cat("Loading ", resultFile, "\n")
+      load(resultFile)
+      bestFitAIC <- RetrieveBestFitAIC(fitMappings)
+      trueFromTestData <- RetrieveTrueFromTestData(i)
+
+      matPredicted_Cluster <- PCMTreeMatrixNodesInSameRegime(bestFitAIC$tree)
+      mode(matPredicted_Cluster) <- "double"
+      matTRUE_Cluster <- PCMTreeMatrixNodesInSameRegime(trueFromTestData$tree)
+      mode(matTRUE_Cluster) <- "double"
+
+      perf_Cluster <- performance(prediction(matPredicted_Cluster, matTRUE_Cluster), "tpr", "fpr")
+
+      perf_BM <- try(performance(prediction(
+        predictions = c(is.BM(bestFitAIC$inferredMappedModels)),
+        labels = c(is.BM(trueFromTestData$trueMappedModels))
+      ), "tpr", "fpr"), silent = TRUE)
+      
+      perf_OU <- try(performance(prediction(
+        predictions = c(is.OU(bestFitAIC$inferredMappedModels)),
+        labels = c(is.OU(trueFromTestData$trueMappedModels))
+      ), "tpr", "fpr"), silent = TRUE)
+
+
+      perf_Uncorrelated <- try(performance(prediction(
+        predictions = c(is.Uncorrelated(bestFitAIC$inferredMappedModels)),
+        labels = c(is.Uncorrelated(trueFromTestData$trueMappedModels))
+      ), "tpr", "fpr"), silent = TRUE)
+
+      perf_Correlated <- try(performance(prediction(
+        predictions = c(is.Correlated(bestFitAIC$inferredMappedModels)),
+        labels = c(is.Correlated(trueFromTestData$trueMappedModels))
+      ), "tpr", "fpr"), silent = TRUE)
+
+      perf_NonDiagonalH <- try(performance(prediction(
+        predictions = c(is.NonDiagonalH(bestFitAIC$inferredMappedModels)),
+        labels = c(is.NonDiagonalH(trueFromTestData$trueMappedModels))
+      ), "tpr", "fpr"), silent = TRUE)
+
+      perf_AsymetricH <- try(performance(prediction(
+        predictions = c(is.NonSymmetricH(bestFitAIC$inferredMappedModels)),
+        labels = c(is.NonSymmetricH(trueFromTestData$trueMappedModels))
+      ), "tpr", "fpr"), silent = TRUE)
+
+
+      data.table(i = i,
+                 treeType=testData[i, treeType],
+                 numClusters = testData[i, numClusters],
+                 crit = factor(c("Cluster",
+                                 "BM process",
+                                 "OU process",
+                                 "Uncorrelated traits",
+                                 "Correlated traits",
+                                 "NonDiagonal H",
+                                 "Asymetric H")
+                               ),
+                 fpr = c(
+                   perf_Cluster@x.values[[1]][2],
+                   if(class(perf_BM) != "try-error") perf_BM@x.values[[1]][2] else as.double(NA),
+                   if(class(perf_OU) != "try-error") perf_OU@x.values[[1]][2] else as.double(NA),
+                   if(class(perf_Uncorrelated) != "try-error") perf_Uncorrelated@x.values[[1]][2] else as.double(NA),
+                   if(class(perf_Correlated) != "try-error") perf_Correlated@x.values[[1]][2] else as.double(NA),
+                   if(class(perf_NonDiagonalH) != "try-error") perf_NonDiagonalH@x.values[[1]][2] else as.double(NA),
+                   if(class(perf_AsymetricH) != "try-error") perf_AsymetricH@x.values[[1]][2] else as.double(NA)
+                 ),
+                 tpr = c(
+                   perf_Cluster@y.values[[1]][2],
+                   if(class(perf_BM) != "try-error") perf_BM@y.values[[1]][2] else as.double(NA),
+                   if(class(perf_OU) != "try-error") perf_OU@y.values[[1]][2] else as.double(NA),
+                   if(class(perf_Uncorrelated) != "try-error") perf_Uncorrelated@y.values[[1]][2] else as.double(NA),
+                   if(class(perf_Correlated) != "try-error") perf_Correlated@y.values[[1]][2] else as.double(NA),
+                   if(class(perf_NonDiagonalH) != "try-error") perf_NonDiagonalH@y.values[[1]][2] else as.double(NA),
+                   if(class(perf_AsymetricH) != "try-error") perf_AsymetricH@y.values[[1]][2] else as.double(NA)
+                 ),
+                 AIC_Final = AIC(bestFitAIC$inferredModel),
+                 AIC_True = AIC(trueFromTestData$trueModel)
+                 )
+    } else {
+      NULL
+    }
+  })
+)
+
+testResultData[, crit2:=factor(crit, levels = c("Cluster",
+                                                "BM process",
+                                                "OU process",
+                                                "Uncorrelated traits",
+                                                "Correlated traits",
+                                                "NonDiagonal H",
+                                                "Asymetric H"))]
+
+save(testResultData, file="TestResultData_t1.RData")
+```
+
+```{r load-test-result-data, eval=evalFig7.1}
+load("TestResultData_t1.RData")
+```
+
+```{r fig7.1-plot-simulation-results, fig.width=8, fig.height=6.66, eval=evalFig7.1}
+testResultData[, numClusters2:=paste0(numClusters, " regimes")]
+testResultData[, treeType2:=paste0(treeType, " tree")]
+ggplot(testResultData[!(crit2 %in% c("BM process", "Uncorrelated traits"))]) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2, size = 0.2, color="red") +
+  geom_label(aes(label = i, x = fpr, y = tpr,
+                 size = 0.5*apply(cbind((0.2+1-tpr), (0.2+fpr)), 1, max),
+                 color = 0.5*apply(cbind((0.2+1-tpr), (0.2+fpr)), 1, max),
+                 fill = AIC_Final<AIC_True ),
+             position = position_jitter(width=0.05, height = 0.05),
+             label.padding = unit(0.1, "lines"), fontface = "bold") +
+  xlab("False positive rate") + ylab("True positive rate") +
+  scale_color_continuous(low="green", high="red") +
+  scale_fill_manual(values = c("TRUE"="white", "FALSE"="black")) +
+  scale_size_continuous(range = c(1.5, 3)) +
+  scale_x_continuous(breaks=c(0, 0.25, 0.5, 0.75, 1)) +
+  scale_y_continuous(breaks=c(0, 0.25, 0.5, 0.75, 1)) +
+  facet_grid(numClusters2*treeType2~crit2) +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+```{r fig8-plot-likelihoods-clades, fig.width=9, fig.height=9, eval=evalFig8}
+nodeLabels <- PCMTreeGetLabels(fitMappings$treeOriginal)
+tableCladeFits <- fitMappings$tableFits[treeEDExpression != "tree"]
+tableCladeFits[, Node:=sapply(startingNodesRegimesLabels, function(.) nodeLabels[as.integer(.[1])])]
+modelLetters <- structure(LETTERS[1:length(fitMappings$arguments$modelTypes)],
+                          names = fitMappings$arguments$modelTypes)
+tableCladeFits[, Model:=sapply(mapping, function(.) modelLetters[.])]
+
+ggplot(tableCladeFits) + 
+  geom_col(aes(x=Node, y=logLik/nobs, 
+               color=Model, 
+               fill=Model), 
+           position="dodge", width=.8, size = .04) + 
+  scale_x_discrete() + 
+  facet_wrap(~cut(nobs,  breaks=c(20, 30, 60, 630), include.lowest = TRUE), nrow=6, scales="free_x") +
+  #theme_light() +
+  theme(axis.text.x = element_text(angle=90))
+```
+
+```{r fig8.2-plot-likelihoods-clades, fig.width=9, fig.height=9, eval=evalFig8.2}
+nodeLabels <- PCMTreeGetLabels(fitMappings$treeOriginal)
+tableCladeFits <- tableFits[treeEDExpression != "tree"]
+tableCladeFits[, Node:=sapply(startingNodesRegimesLabels, function(.) nodeLabels[as.integer(.[1])])]
+modelLetters <- structure(LETTERS[1:length(fitMappings$arguments$modelTypes)],
+                          names = fitMappings$arguments$modelTypes)
+tableCladeFits[, Model:=sapply(mapping, function(.) modelLetters[.])]
+
+ggplot(tableCladeFits) + 
+  geom_col(aes(x=Node, y=logLik/nobs, 
+               color=Model, 
+               fill=Model), 
+           position="dodge", width=.8, size = .04) + 
+  scale_x_discrete() + 
+  facet_wrap(~cut(nobs,  breaks=c(20, 30, 60, 630), include.lowest = TRUE), nrow=6, scales="free_x") +
+  #theme_light() +
+  theme(axis.text.x = element_text(angle=90))
+```
+
+```{r Z-test-regression-coefs-in-regimes, echo=FALSE, results="show", eval=FALSE}
+dtNodeRegimesBackbone <- PCMTreeDtNodeRegimes(tree3)
+
+startingNodeRegimesReal <-
+  dtNodeRegimesBackbone[
+    !sapply(endNodeLab, startsWith, "i_"), 
+    list(node = endNode[which.min(endTime)], lab = endNodeLab[which.min(endTime)]), by = regime]
+startingNodeRegimesReal[1, lab:="Mammals"]
+regimeNames <- startingNodeRegimesReal[, lab]
+names(regimeNames) <- startingNodeRegimesReal[, regime]
+
+R <- PCMTreeNumUniqueRegimes(inferredTree)
+
+# Z-statistics for the difference between the regression slopes (upper triangle) and
+# the differences between the intercepts (lower triangle).
+zMatrix <- matrix(0.0, R, R)
+colnames(zMatrix) <- rownames(zMatrix) <- 
+  paste0(as.character(1:R), ". ", regimeNames[as.character(1:R)])
+
+# two-tailed p-values for the z-scores
+pMatrix <- matrix(0.5, R, R)
+colnames(pMatrix) <- rownames(pMatrix) <- 
+  paste0(as.character(1:R), ". ", regimeNames[as.character(1:R)])
+
+deltaMatrix <- matrix(0.0, R, R)
+colnames(deltaMatrix) <- rownames(deltaMatrix) <- 
+  paste0(as.character(1:R), ". ", regimeNames[as.character(1:R)])
+
+linModels <- lapply(seq_len(R), function(ri) {
+  tips_ri <- PCMTreeGetTipsInRegime(inferredTree, ri)
+  lm(valuesMammals[2, tips_ri]~valuesMammals[1, tips_ri])
+})
+
+for(i in seq_len(R-1)) {
+  smmi <- summary(linModels[[i]])
+  for(j in (i+1):R) {
+    smmj <- summary(linModels[[j]])
+    # upper triangular: slope
+    zMatrix[i,j] <- (smmi$coefficients[2,1]-smmj$coefficients[2,1]) /
+      sqrt(smmi$coefficients[2,2]^2 + smmj$coefficients[2,2]^2)
+    pMatrix[i,j] <- 2*pnorm(abs(zMatrix[i,j]), lower.tail = FALSE)
+    
+    deltaMatrix[i,j] <- smmi$coefficients[2,1]-smmj$coefficients[2,1]
+    
+    
+    # lower triangle: intercept
+    zMatrix[j,i] <- (smmi$coefficients[1,1]-smmj$coefficients[1,1]) /
+      sqrt(smmi$coefficients[1,2]^2 + smmj$coefficients[1,2]^2)
+    pMatrix[j,i] <- 2*pnorm(abs(zMatrix[j,i]), lower.tail = FALSE)
+    deltaMatrix[j,i] <- smmi$coefficients[1,1]-smmj$coefficients[1,1]
+    
+  }
+}
+
+sympMatrix <- symnum(pMatrix, corr = FALSE,
+               cutpoints = c(0, .01, .05, .1, 1),
+               symbols = c("**", "*", "\\cdot", ""))
+#noquote(cbind(P.val = format(pval), Signif = symp))
+
+sympMatrix[] <- paste0(round(deltaMatrix[], 2), "^{", sympMatrix[], "}")
+
+for(i in seq_len(R-1)) {
+  for(j in (i+1):R) {
+    sympMatrix[i,j] <- 
+      paste0(
+        "$\\begin{array}{*{20}{l}}",sympMatrix[j,i],"\\\\",sympMatrix[i,j],"\\end{array}$")
+  }
+}
+
+sympMatrix[lower.tri(sympMatrix, diag = TRUE)] <- ""
+
+class(sympMatrix) <- NULL
+
+print.xtable(xtable(sympMatrix), sanitize.text.function=function(x) x, comment=FALSE)
+```
+
+```{r lrtest-Mammal-fits, eval=FALSE}
+modelBestAIC <- inferredModel
+modelBestGlobal <- RetrieveFittedModelsFromFitVectors(
+  fitMappings, fitMappings$tableFits[treeEDExpression==paste0("E(tree,", PCMTreeNumTips(fitMappings$treeOriginal) + 1, ")") & sapply(startingNodesRegimesLabels, length) == 1][order(aic)][1], setAttributes = TRUE)$fittedModel[[1]]
+
+model2ndBestGlobal <- RetrieveFittedModelsFromFitVectors(
+  fitMappings, fitMappings$tableFits[treeEDExpression==paste0("E(tree,", PCMTreeNumTips(fitMappings$treeOriginal) + 1, ")") & sapply(startingNodesRegimesLabels, length) == 1][order(aic)][2], setAttributes = TRUE)$fittedModel[[1]]
+                                                      
+lrtest(model2ndBestGlobal, modelBestGlobal, modelBestAIC)
+```
+
+```{r data-fig9-force-fields-H-matrix, eval=evalFig9}
+# 1 Ma
+timeSteps <- c(1, 10, 100, 1000)
+grid <- as.data.table(expand.grid(x = seq(xlim[1], xlim[2], length.out = 5), 
+            y = seq(ylim[1], ylim[2], length.out = 4)))
+grid[, p:=.I]
+
+listGridsMeansSamples <- sapply(timeSteps, function(timeStep)
+  lapply(seq_len(PCMNumRegimes(inferredModel)), function(i) {
+    dtModel <- copy(grid)
+    dtModel[, tstep:=timeStep]
+    regimeModel <- paste0(
+      'paste(', i, ', ". ", ',
+      shortModelNames[class(inferredModel[[as.character(i)]])[1]],
+      ')')
+    dtModel[, regime:=regimeModel]
+    dtModel[, ri:=i]
+    
+    for(j in seq_len(nrow(dtModel))) {
+      mu <- PCMMeanAtTime(
+        timeStep, 
+        PCMApplyTransformation(inferredModel[[as.character(i)]]),
+        X0 = dtModel[j, c(x,y)])
+      Sigma <- PCMVarAtTime(
+        timeStep,
+        PCMApplyTransformation(inferredModel[[as.character(i)]]))
+      
+      dtModel[j, x2:=mu[1]]
+      dtModel[j, y2:=mu[2]]
+      
+      
+      xys <- rmvnorm(1000, mean=mu, sigma = Sigma)
+      
+      dtSamplej <- data.table(x=as.double(NA), y=as.double(NA), 
+                              p = j,
+                              tstep = timeStep,
+                              regime = regimeModel, ri = i,
+                              x2 = as.double(NA), y2 = as.double(NA),
+                              xs = xys[, 1], ys = xys[, 2])
+      dtModel[j, xs:=as.double(NA)]
+      dtModel[j, ys:=as.double(NA)]
+      
+      dtModel <- rbindlist(list(dtModel, dtSamplej))
+    }
+    
+    dtModel
+}))
+
+dtGridsMeansSamples <- rbindlist(listGridsMeansSamples)
+regimesOrdered <- dtGridsMeansSamples[, list(regime=unique(regime)), keyby=ri][, regime]
+```
+
+
+```{r fig9-1-force-fields-H-matrix, dev.args=list(colormodel="rgb"), dpi=600,  fig.width=9,fig.height=8, eval=evalFig9}
+ggplot(dtGridsMeansSamples[ri %in% c(2, 3, 10)]) + 
+  geom_segment(aes(x=x, y=y, xend=x2, yend=y2, color=as.character(ri))) +
+  geom_point(aes(x=x, y=y))+
+  geom_point(aes(x=x2, y=y2), color="red", size=1) +
+  stat_ellipse(aes(x=xs, y=ys, group=p, color=as.character(ri)), type="norm", alpha=0.5, na.rm=TRUE) +
+  scale_color_manual(values = palette) +
+  coord_fixed(xlim = xlim, ylim = ylim, ratio = 1) +
+  xlab("lg(body-mass [g])") +
+  ylab("lg(brain-mass [g])") +
+  theme_bw() + 
+  theme(legend.position = "none") +
+  facet_grid(factor(regime, levels=regimesOrdered)~factor(tstep, levels=unique(sort(tstep)), labels=paste0("paste(", unique(sort(tstep)), ", ' Ma')")), labeller = label_parsed)
+
+```
+
+```{r fig9-force-fields-H-matrix, dev.args=list(colormodel="rgb"), dpi=600,  fig.width=8, fig.height=12, eval=evalFig9}
+pl1 <- ggplot(dtGridsMeansSamples[ri<=6]) + 
+  geom_segment(aes(x=x, y=y, xend=x2, yend=y2, color=as.character(ri))) +
+  geom_point(aes(x=x, y=y))+
+  geom_point(aes(x=x2, y=y2), color="red", size=1) +
+  stat_ellipse(aes(x=xs, y=ys, group=p, color=as.character(ri)), type="norm", alpha=0.5, na.rm=TRUE) +
+  scale_color_manual(values = palette) +
+  coord_fixed(xlim = xlim, ylim = ylim, ratio = 1) +
+  xlab("lg(body-mass [g])") +
+  ylab("lg(brain-mass [g])") +
+  theme_bw() + 
+  theme(legend.position = "none") +
+  facet_grid(factor(regime, levels=regimesOrdered)~factor(tstep, levels=unique(sort(tstep)), labels=paste0("paste(", unique(sort(tstep)), ", ' Ma')")), labeller = label_parsed)
+
+pl2 <- ggplot(dtGridsMeansSamples[ri>6]) + 
+  geom_segment(aes(x=x, y=y, xend=x2, yend=y2, color=as.character(ri))) +
+  geom_point(aes(x=x, y=y), na.rm=TRUE)+
+  geom_point(aes(x=x2, y=y2), color="red", size=1, na.rm = TRUE) +
+  stat_ellipse(aes(x=xs, y=ys, group=p, color=as.character(ri)), type="norm", alpha=0.5, na.rm=TRUE) +
+  scale_color_manual(values = palette) +
+  coord_fixed(xlim = xlim, ylim = ylim, ratio = 1) +
+  xlab("lg(body-mass [g])") +
+  ylab("lg(brain-mass [g])") +
+  theme_bw() + 
+  theme(legend.position = "none") +
+  facet_grid(factor(regime, levels=regimesOrdered)~factor(tstep, levels=unique(sort(tstep)), labels=paste0("paste(", unique(sort(tstep)), ", ' Ma')")), labeller = label_parsed)
+  
+#cowplot::plot_grid(pl1,pl2, nrow=1)
+pl1
+pl2
 ```
