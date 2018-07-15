@@ -20,6 +20,8 @@ if(length(args) > 0) {
   id <- 1
 }
 
+prefixFiles = paste0("MixedGaussian_testData_t2_id_", id, "_t2_")
+
 if(!exists("cluster") || is.null(cluster)) {
   if(require(doMPI)) {
     # using MPI cluster as distributed node cluster (possibly running on a cluster)
@@ -62,8 +64,7 @@ if(file.exists(fileCurrentResults)) {
 }
 
 
-# reduce the set of models to OU models only.
-modelTypes <- InferredModel_MixedGaussian()[3:6]
+modelTypes <- InferredModel_MixedGaussian()
 argsMixedGaussian <- ArgsMixedGaussian_MixedGaussian()
 argsPCMParamLowerLimit <- list()
 argsPCMParamUpperLimit <- list()
@@ -73,26 +74,15 @@ options(PCMBase.Lmr.mode = 11)
 
 print(PCMOptions())
 
-tree <- treeMammals
-
-# segment long branches
-while(TRUE) {
-  points <- PCMTreeLocateMidpointsOnBranches(tree, 16)
-  if(length(points$nodes) == 0) {
-    break
-  } else {
-    tree <- PCMTreeInsertSingletons(tree, points$nodes, points$positions)
-  }
-}
-
-values <- valuesMammals
+tree <- testData_t2$tree[[id]]
+values <- testData_t2$X[[id]][, 1:PCMTreeNumTips(tree)]
 
 fitMappings <- PCMFitModelMappings(
   values, tree, modelTypes = modelTypes,
   generatePCMModelsFun = GeneratePCMModels,
-  metaIFun = PCMInfoCpp, positiveValueGuard = 1000,
+  metaIFun = PCMInfoCpp, positiveValueGuard = 2500,
 
-  tableFitsPrev = tableFits,
+  tableFits = tableFits,
 
   prefixFiles = prefixFiles,
 
@@ -109,9 +99,7 @@ fitMappings <- PCMFitModelMappings(
 
   printFitVectorsToConsole = TRUE,
   doParallel = TRUE,
-  verbose = TRUE,
-  verboseComposeMixedGaussianFromFits = TRUE,
-  verboseAdaptArgsConfigOptimAndMCMC = TRUE)
+  verbose = TRUE)
 
 save(fitMappings, file = paste0("FinalResult_", prefixFiles, ".RData"))
 

@@ -259,7 +259,7 @@ InferredModel_MixedGaussian <- function() {
     "OU__Omitted_X0__Schur_Diagonal_WithNonNegativeDiagonal_Transformable_H__Theta__UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Sigma_x__Omitted_Sigmae_x",
     # OU; dependent traits (Symmetric H and non-diagonal Sigma)
     "OU__Omitted_X0__Schur_UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Transformable_H__Theta__UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Sigma_x__Omitted_Sigmae_x",
-    # OU; dependent traits with causality (non-symmetric H and non-diagonal Sigma - we omit this in this version of the package)
+    # OU; dependent traits with causality (non-symmetric H and non-diagonal Sigma)
     "OU__Omitted_X0__Schur_WithNonNegativeDiagonal_Transformable_H__Theta__UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Sigma_x__Omitted_Sigmae_x"
   )
 }
