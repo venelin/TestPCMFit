@@ -234,14 +234,18 @@ ArgsMixedGaussian_SurfaceOU <- function() {
 
 InferredModel_ScalarOU <- function() {
   c(
-    "OU__Omitted_X0__Schur_ScalarDiagonal_WithNonNegativeDiagonal_Transformable_Global_H__Theta__UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Sigma_x__Omitted_Sigmae_x"
+    "OU__Omitted_X0__Schur_ScalarDiagonal_WithNonNegativeDiagonal_Transformable_Global_H__Theta__UpperTriangularWithDiagonal_WithNonNegativeDiagonal_Global_Sigma_x__Omitted_Sigmae_x"
   )
 }
 ArgsMixedGaussian_ScalarOU <- function() {
   list(
     H = structure(0.0,
                   class = c("MatrixParameter", "_Schur", "_ScalarDiagonal", "_WithNonNegativeDiagonal", "_Transformable", "_Global"),
+
                   description = "adaptation rate matrix"),
+    Sigma_x = structure(0.0,
+                        class = c("MatrixParameter", "_UpperTriangularWithDiagonal", "_WithNonNegativeDiagonal", "_Global"),
+                        description = "upper triangular Choleski factor for unit time variance of the OU-process"),
     Sigmae_x = structure(0.0, class = c("MatrixParameter", "_Omitted"),
                          description = "upper triangular Choleski factor of the non-phylogenetic variance-covariance")
   )

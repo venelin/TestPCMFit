@@ -165,4 +165,4 @@ cat("Final mapping after fine tuning=", attr(currentModel, "mapping"), "\n")
 cat("Final AIC after fine tuning=", AIC(currentModel), "\n")
 
 finalModel <- currentModel
-save(finalModel, file = "Result_FineTuning_BestFit_MammalData_t1.RData")
+save(finalModel, file = "Result_FineTuning_BestFit_MammalData_t6.RData")

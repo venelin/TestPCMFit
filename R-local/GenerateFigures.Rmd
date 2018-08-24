@@ -15,7 +15,6 @@ library(ggplot2)
 library(ggimage)
 library(cowplot)
 library(data.table)
-library(ROCR)
 library(fpc)
 library(knitr)
 library(rmarkdown)
@@ -44,28 +43,43 @@ options(PCMBase.Skip.Singular = FALSE)
 options(PCMBase.Threshold.Skip.Singular = 1e-4)
 
 evalFig1 <- FALSE
-evalFig2 <- TRUE
+evalFig2 <- FALSE
 evalFig2.1 <- FALSE
 evalFig3 <- FALSE
 evalFig4 <- FALSE
 evalFig5 <- FALSE
 evalFig6 <- FALSE
 evalFig6.2 <- FALSE
-evalFig7.1 <- TRUE
+evalFig7.1 <- FALSE
+evalFig7.2 <- TRUE
+evalFig7.3 <- TRUE
+evalFig7.4 <- TRUE
 evalFig8 <- FALSE
 evalFig8.2 <- FALSE
-evalFig9 <- TRUE
+evalFig9 <- FALSE
+evalFig10 <- FALSE
+evalFig10.2 <- FALSE
 ```
 
 
 ```{r load-Results-MammalData, include=FALSE, eval=TRUE}
-#load("../local-data/FinalResult_MixedGaussian_MammalData_id_1_t1_.RData")
-#load("FinalResult_MixedGaussian_MammalData_id_1_t3_.RData")
-#load("FinalResult_MixedGaussian_MammalData_id_1_t4_.RData")
-load("FinalResult_MixedGaussian_MammalData_id_1_t6_.RData")
-#load("FinalResult_MixedGaussian_MammalData_id_1_t7_.RData")
-load("Result_FineTuning_BestFit_MammalData_t1.RData")
+# this will load an object called fitMappings:
 
+#load("../local-data/ResultsMammalData/FinalResult_MixedGaussian_MammalData_id_1_t1_.RData")
+#load("../local-data/ResultsMammalData/FinalResult_MixedGaussian_MammalData_id_1_t3_.RData")
+#load("../local-data/ResultsMammalData/FinalResult_MixedGaussian_MammalData_id_1_t5_.RData")
+
+# t6 corresponds to the fit with models A-F
+load("../local-data/ResultsMammalData/FinalResult_MixedGaussian_MammalData_id_1_t6_.RData")
+
+#load("../local-data/ResultsMammalData/FinalResult_MixedGaussian_MammalData_id_1_t7_.RData")
+#load("../local-data/ResultsMammalData/FinalResult_ScalarOU_MammalData_id_1_t8_.RData")
+#
+# The "Result_FineTuning_BestFit_MammalData_t1.RData file contains the refined fit from t6 (improving the
+# AIC from -237 to -241, by iteratively fixing all but one regimes, while optimizing the left free regime
+# with respect to model type and parameters). This step was performed in a separate R-script 
+# TuneBestFitMammalData_t6.R.
+load("../local-data/ResultsMammalData/Result_FineTuning_BestFit_MammalData_t6.RData")
 
 tree <- fitMappings$treeOriginal
 selectedTips <- dtMammals[node<=PCMTreeNumTips(treeMammals), 
@@ -84,7 +98,7 @@ muGlobal <- rowMeans(valuesMammals)
 ```
 
 ```{r extract-inferred-objects-MammalData, include=FALSE, eval=TRUE}
-#inferred <- RetrieveBestFitAIC(fitMappings, rank = 1)
+#inferred <- RetrieveBestFitAIC(fitMappings, rank = 2)
 #inferredModel <- inferred$inferredModel
 inferredModel <- finalModel
 
@@ -98,10 +112,6 @@ inferredTree <- attr(inferredModel, "tree")
 PCMTreeSetLabels(inferredTree, PCMTreeGetLabels(tree))
 
 colnames(valuesMammals) <- inferredTree$tip.label
-
-# 
-print(AIC(inferredModel))
-print(logLik(inferredModel))
 
 modelTypes <- InferredModel_MixedGaussian()
 shortModelNames <- sapply(seq_along(modelTypes), function(i) {
@@ -471,9 +481,9 @@ pl <- pl +
 pl
 ```
 
-```{r fig2-SearchHistoryMammalTree, fig.width=6.8, fig.height=11, eval=evalFig2}
+```{r fig2-SearchHistoryMammalTree, fig.width=10.1, fig.height=7.25, eval=evalFig2}
 plList <- PlotSearchHistory(
-  fitMappings, layout = 'fan', open.angle = 2, size=.25,
+  fitMappings, layout = 'fan', open.angle = 2, size=.25, alpha=.5,
   sizeGreyNodepoints = 2.0, 
   sizeColorNodepoints = 6, 
   sizeBlackAllowedModelTypes = 2.0, 
@@ -484,97 +494,34 @@ plList <- PlotSearchHistory(
 
 plList <- plList[!sapply(plList, is.null)]
 
-cowplot::plot_grid(
-  plotlist = lapply(plList[1:8],
-                    function(p) p + theme(plot.title = element_text(size=12))),
-  nrow=3, ncol = 2)
+dtCladePartition <- data.table(node=seq_len(PCMTreeNumNodes(inferredTree)))
+setkey(dtCladePartition, node)
+
+dtCladePartition[node %in% PCMTreeGetStartingNodesRegimes(inferredTree), selected:=TRUE]
+dtCladePartition[list(PCMTreeGetStartingNodesRegimes(inferredTree)), 
+                 regimeLETTER:=LETTERS[as.integer(attr(inferredModel, "mapping"))]]      
+
+
+plFinal <- PCMTreePlot(inferredTree, layout = 'fan', open.angle = 2, size=.25, alpha = .5, palette = palette) %<+% dtCladePartition +
+  geom_nodepoint(aes(shape=selected), size=6, na.rm = TRUE) + 
+  geom_text(aes(label=regimeLETTER), color="black", size=4) +
+  ggtitle(paste0("FINAL: AIC=", round(AIC(inferredModel)),
+                   ", logLik=", round(logLik(inferredModel)),
+                   ", p=", PCMParamCount(inferredModel, TRUE, TRUE)))
+    
+plList[[14]] <- plFinal
 
 cowplot::plot_grid(
-  plotlist = lapply(plList[9:13],
+  plotlist = lapply(plList[1:6],
                     function(p) p + theme(plot.title = element_text(size=12))),
-  nrow=3, ncol = 2)
-# 
-# cowplot::plot_grid(
-#   plotlist = lapply(plList[9:12],
-#                     function(p) p + theme(plot.title = element_text(size=18))),
-#   nrow=2, ncol = 2)
-# 
-# cowplot::plot_grid(
-#   plotlist = lapply(plList[13],
-#                     function(p) p + theme(plot.title = element_text(size=18))),
-#   nrow=2, ncol = 2)
+  nrow=2, ncol = 3)
 ```
-
-```{r fig2-1-SearchHistoryMammalTree, fig.width=14, fig.height=15, eval=evalFig2.1}
-plList <- PlotSearchHistory(
-  fitMappings, layout = 'fan', open.angle = 2, size=.25, alpha = .75,
-  sizeGreyNodepoints = 2.0, 
-  sizeColorNodepoints = 4, 
-  sizeBlackAllowedModelTypes = 2.0, 
-  sizeColorAllowedModelTypes = 2.8, 
-  sizeRankInQueue = 2.8,
-  vjustBlackAllowedModelTypes = -1.4,
-  vjustColorAllowedModelTypes = -1.8
-  )
-
-plList <- plList[!sapply(plList, is.null)]
-
+```{r fig2-1-SearchHistoryMammalTree, fig.width=10.1, fig.height=11, eval=evalFig2}
 cowplot::plot_grid(
-  plotlist = lapply(plList[1:9],
-                    function(p) p + theme(plot.title = element_text(size=18))),
+  plotlist = lapply(plList[7:14],
+                    function(p) p + theme(plot.title = element_text(size=12))),
   nrow=3, ncol = 3)
-# 
-# cowplot::plot_grid(
-#   plotlist = lapply(plList[5:8],
-#                     function(p) p + theme(plot.title = element_text(size=18))),
-#   nrow=2, ncol = 2)
-# 
-# cowplot::plot_grid(
-#   plotlist = lapply(plList[9:12],
-#                     function(p) p + theme(plot.title = element_text(size=18))),
-#   nrow=2, ncol = 2)
-# 
-# cowplot::plot_grid(
-#   plotlist = lapply(plList[13],
-#                     function(p) p + theme(plot.title = element_text(size=18))),
-#   nrow=2, ncol = 2)
 ```
-
-```{r fig2-2-SearchHistoryMammalTree, fig.width=8, fig.height=8.5, eval=evalFig2.1}
-plList <- PlotSearchHistory(
-  fitMappings, layout = 'fan', open.angle = 2, size=.25, alpha = .75,
-  sizeGreyNodepoints = 2.0, 
-  sizeColorNodepoints = 8, 
-  sizeBlackAllowedModelTypes = 2.0, 
-  sizeColorAllowedModelTypes = 2.8, 
-  sizeRankInQueue = 5.0,
-  vjustBlackAllowedModelTypes = -1.4,
-  vjustColorAllowedModelTypes = -1.8
-  )
-
-plList <- plList[!sapply(plList, is.null)]
-
-cowplot::plot_grid(
-  plotlist = lapply(plList[c(1:2, 7:8)],
-                    function(p) p + theme(plot.title = element_text(size=18))),
-  nrow=2, ncol = 2)
-# 
-# cowplot::plot_grid(
-#   plotlist = lapply(plList[5:8],
-#                     function(p) p + theme(plot.title = element_text(size=18))),
-#   nrow=2, ncol = 2)
-# 
-# cowplot::plot_grid(
-#   plotlist = lapply(plList[9:12],
-#                     function(p) p + theme(plot.title = element_text(size=18))),
-#   nrow=2, ncol = 2)
-# 
-# cowplot::plot_grid(
-#   plotlist = lapply(plList[13],
-#                     function(p) p + theme(plot.title = element_text(size=18))),
-#   nrow=2, ncol = 2)
-```
-
 
 
 ```{r fig3-PlotMammalTreeAndDataOrders, fig.width=36, fig.height=18, eval=evalFig3}
@@ -926,17 +873,16 @@ plTree <- plTree +
 plTree
 ```
 
-
-```{r analyze-simulations, include=FALSE, eval=FALSE}
+```{r analyze-simulations-t1, include=FALSE, eval=FALSE}
 testResultData <- rbindlist(
   lapply(1:nrow(testData), function(i) {
-    resultFile <- paste0("../local-data/FinalResult_MixedGaussian_testData_id_", i, "_t1_.RData")
+    resultFile <- paste0("../local-data/ResultsTestData_t1/FinalResult_MixedGaussian_testData_id_", i, "_t1_.RData")
 
     if(file.exists(resultFile)) {
       cat("Loading ", resultFile, "\n")
       load(resultFile)
       bestFitAIC <- RetrieveBestFitAIC(fitMappings)
-      trueFromTestData <- RetrieveTrueFromTestData(i)
+      trueFromTestData <- RetrieveTrueFromTestData(testData, i)
 
       matPredicted_Cluster <- PCMTreeMatrixNodesInSameRegime(bestFitAIC$tree)
       mode(matPredicted_Cluster) <- "double"
@@ -1026,11 +972,8 @@ testResultData[, crit2:=factor(crit, levels = c("Cluster",
 save(testResultData, file="TestResultData_t1.RData")
 ```
 
-```{r load-test-result-data, eval=evalFig7.1}
-load("TestResultData_t1.RData")
-```
-
-```{r fig7.1-plot-simulation-results, fig.width=8, fig.height=6.66, eval=evalFig7.1}
+```{r fig7-plot-sim-results-t1, fig.width=8, fig.height=6.66, eval=evalFig7.1}
+load("../local-data/ResultsTestData_t2/TestResultData_t1.RData")
 testResultData[, numClusters2:=paste0(numClusters, " regimes")]
 testResultData[, treeType2:=paste0(treeType, " tree")]
 ggplot(testResultData[!(crit2 %in% c("BM process", "Uncorrelated traits"))]) +
@@ -1050,6 +993,425 @@ ggplot(testResultData[!(crit2 %in% c("BM process", "Uncorrelated traits"))]) +
   facet_grid(numClusters2*treeType2~crit2) +
   theme_bw() +
   theme(legend.position = "none")
+```
+
+```{r analyze-simulations-t2, include=FALSE, eval=FALSE}
+if(file.exists("../local-data/ResultsTestData_t2/TestResultData_t2.RData") ) {
+  load("../local-data/ResultsTestData_t2/TestResultData_t2.RData")
+} else {
+  testResultData <- NULL
+}
+testResultDataNew <- rbindlist(
+  lapply(1:nrow(testData_t2), function(i) {
+    
+    if(is.null(testResultData) || !(i %in% testResultData[, unique(i)]) ) {
+      resultFile <- paste0("../local-data/ResultsTestData_t2/FinalResult_MixedGaussian_testData_t2_id_", i, "_t2_.RData")
+
+    if(file.exists(resultFile)) {
+      cat("Loading ", resultFile, "\n")
+      load(resultFile)
+      bestFitAIC <- RetrieveBestFitAIC(fitMappings)
+      trueFromTestData <- RetrieveTrueFromTestData(testData_t2, i)
+
+      matPredicted_Cluster <- PCMTreeMatrixNodesInSameRegime(bestFitAIC$tree)
+      mode(matPredicted_Cluster) <- "double"
+      matTRUE_Cluster <- PCMTreeMatrixNodesInSameRegime(trueFromTestData$tree)
+      mode(matTRUE_Cluster) <- "double"
+
+      perf_Cluster <- list(tpr = tpr(matPredicted_Cluster, matTRUE_Cluster),
+                           fpr = fpr(matPredicted_Cluster, matTRUE_Cluster))
+
+      perf_BM <- list(tpr = tpr(is.BM(bestFitAIC$inferredMappedModels), 
+                                is.BM(trueFromTestData$trueMappedModels)),
+                      fpr = fpr(is.BM(bestFitAIC$inferredMappedModels), 
+                                is.BM(trueFromTestData$trueMappedModels)))
+      
+      perf_OU <- list(tpr = tpr(is.OU(bestFitAIC$inferredMappedModels), 
+                                is.OU(trueFromTestData$trueMappedModels)),
+                      fpr = fpr(is.OU(bestFitAIC$inferredMappedModels), 
+                                is.OU(trueFromTestData$trueMappedModels)))
+      
+      perf_Uncorrelated <- list(tpr = tpr(is.Uncorrelated(bestFitAIC$inferredMappedModels),
+                                          is.Uncorrelated(trueFromTestData$trueMappedModels)),
+                                fpr = fpr(is.Uncorrelated(bestFitAIC$inferredMappedModels),
+                                          is.Uncorrelated(trueFromTestData$trueMappedModels)))
+      
+      perf_Correlated <- list(tpr = tpr(is.Correlated(bestFitAIC$inferredMappedModels),
+                                        is.Correlated(trueFromTestData$trueMappedModels)),
+                              fpr = fpr(is.Correlated(bestFitAIC$inferredMappedModels),
+                                        is.Correlated(trueFromTestData$trueMappedModels)))
+      
+      perf_NonDiagonalH <- list(tpr = tpr(is.NonDiagonalH(bestFitAIC$inferredMappedModels),
+                                          is.NonDiagonalH(trueFromTestData$trueMappedModels)),
+                                fpr = fpr(is.NonDiagonalH(bestFitAIC$inferredMappedModels),
+                                          is.NonDiagonalH(trueFromTestData$trueMappedModels)))
+      
+      perf_AsymetricH <- list(tpr = tpr(is.NonSymmetricH(bestFitAIC$inferredMappedModels),
+                                        is.NonSymmetricH(trueFromTestData$trueMappedModels)),
+                              fpr = fpr(is.NonSymmetricH(bestFitAIC$inferredMappedModels),
+                                        is.NonSymmetricH(trueFromTestData$trueMappedModels)))
+      
+      
+      data.table(i = i,
+                 treeType=testData_t2[i, treeType],
+                 treeSize=testData_t2[i, treeSize],
+                 numClusters = testData_t2[i, numClusters],
+                 crit = factor(c("Cluster",
+                                 "BM process",
+                                 "OU process",
+                                 "Uncorrelated traits",
+                                 "Correlated traits",
+                                 "NonDiagonal H",
+                                 "Asymetric H")
+                               ),
+                 tpr = c(
+                   perf_Cluster$tpr,
+                   perf_BM$tpr,
+                   perf_OU$tpr,
+                   perf_Uncorrelated$tpr,
+                   perf_Correlated$tpr,
+                   perf_NonDiagonalH$tpr,
+                   perf_AsymetricH$tpr),
+                 fpr = c(
+                   perf_Cluster$fpr,
+                   perf_BM$fpr,
+                   perf_OU$fpr,
+                   perf_Uncorrelated$fpr,
+                   perf_Correlated$fpr,
+                   perf_NonDiagonalH$fpr,
+                   perf_AsymetricH$fpr),
+                 AIC_Final = AIC(bestFitAIC$inferredModel),
+                 AIC_True = AIC(trueFromTestData$trueModel),
+                 inferred.x0 = bestFitAIC$inferredModel$X0[[1]],
+                 inferred.y0 = bestFitAIC$inferredModel$X0[[2]],
+                 true.x0 = trueFromTestData$trueModel$X0[[1]],
+                 true.y0 = trueFromTestData$trueModel$X0[[2]]
+                 )
+    } else {
+      NULL
+    }
+    } else {
+      NULL
+    }
+    
+  })
+)
+
+if(!is.null(testResultData)) {
+  testResultData <- rbindlist(list(testResultData, testResultDataNew), fill = TRUE)
+} else {
+  testResultData <- testResultDataNew
+}
+
+testResultData[, crit2:=factor(crit, levels = c("Cluster",
+                                                "BM process",
+                                                "OU process",
+                                                "Uncorrelated traits",
+                                                "Correlated traits",
+                                                "NonDiagonal H",
+                                                "Asymetric H"))]
+
+save(testResultData, file="../local-data/ResultsTestData_t2/TestResultData_t2.RData")
+```
+
+```{r fig7-plot-sim-results-t2, fig.width=8, fig.height=6.66, eval=evalFig7.2}
+load("../local-data/ResultsTestData_t2/TestResultData_t2.RData")
+testResultData[, numClusters2:=paste0(numClusters, " regimes")]
+testResultData[, treeType2:=factor(paste0(treeType, " tree"), levels=c("ultrametric tree", "non-ultrametric tree"))]
+ggplot(testResultData[treeSize == "small" & !(crit2 %in% c("BM process", "Uncorrelated traits"))]) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2, size = 0.2, color="red") +
+  geom_label(aes(label = i, x = fpr, y = tpr,
+                 #size = 0.5*apply(cbind((0.2+1-tpr), (0.2+fpr)), 1, max),
+                 color = 0.5*apply(cbind((0.2+1-tpr), (0.2+fpr)), 1, max),
+                 fill = AIC_Final<AIC_True ),
+             size = 2,
+             position = position_jitter(width=0.05, height = 0.05),
+             label.padding = unit(0.1, "lines"), fontface = "bold") +
+  xlab("False positive rate") + ylab("True positive rate") +
+  scale_color_continuous(low="green", high="red") +
+  scale_fill_manual(values = c("TRUE"="white", "FALSE"="black")) +
+  #scale_size_continuous(range = c(1.5, 3)) +
+  scale_x_continuous(breaks=c(0, 0.25, 0.5, 0.75, 1)) +
+  scale_y_continuous(breaks=c(0, 0.25, 0.5, 0.75, 1)) +
+  facet_grid(numClusters2*treeType2~crit2) +
+  theme_bw() +
+  theme(legend.position = "none")
+
+ggplot(testResultData[treeSize == "big" & !(crit2 %in% c("BM process", "Uncorrelated traits"))]) +
+  geom_abline(slope = 1, intercept = 0, linetype = 2, size = 0.2, color="red") +
+  geom_label(aes(label = i, x = fpr, y = tpr,
+                 #size = 0.5*apply(cbind((0.2+1-tpr), (0.2+fpr)), 1, max),
+                 color = 0.5*apply(cbind((0.2+1-tpr), (0.2+fpr)), 1, max),
+                 fill = AIC_Final<AIC_True ),
+             size = 2,
+             position = position_jitter(width=0.05, height = 0.05),
+             label.padding = unit(0.1, "lines"), fontface = "bold") +
+  xlab("False positive rate") + ylab("True positive rate") +
+  scale_color_continuous(low="green", high="red") +
+  scale_fill_manual(values = c("TRUE"="white", "FALSE"="black")) +
+  #scale_size_continuous(range = c(1.5, 3)) +
+  scale_x_continuous(breaks=c(0, 0.25, 0.5, 0.75, 1)) +
+  scale_y_continuous(breaks=c(0, 0.25, 0.5, 0.75, 1)) +
+  facet_grid(numClusters2*treeType2~crit2) +
+  theme_bw() +
+  theme(legend.position = "none")
+```
+
+
+```{r fig7-plot-sim-trees-t2, fig.width=6, fig.height=6, eval = evalFig7.2}
+plList <- list(
+  pl1 = PCMTreePlot(testData_t2$treeWithRegimes[[1]], layout="fan", open.angle=2, size=.25) +
+    ggtitle("A. ultrametric / 2 regimes"),
+  pl2 = PCMTreePlot(testData_t2$treeWithRegimes[[25]], layout="fan", open.angle=2, size=.25) +
+    ggtitle("B. ultrametric / 8 regimes"),
+  pl3 = PCMTreePlot(testData_t2$treeWithRegimes[[49]], layout="fan", open.angle=2, size=.25) +
+    ggtitle("C. non-ultrametric / 2 regimes"),
+  pl4 = PCMTreePlot(testData_t2$treeWithRegimes[[73]], layout="fan", open.angle=2, size=.25) +
+    ggtitle("D. non-ultrametric / 8 regimes"),
+  
+  pl5 = PCMTreePlot(testData_t2$treeWithRegimes[[97]], layout="fan", open.angle=2, size=.25) +
+    ggtitle("A. ultrametric / 2 regimes"),
+  pl6 = PCMTreePlot(testData_t2$treeWithRegimes[[121]], layout="fan", open.angle=2, size=.25) +
+    ggtitle("B. ultrametric / 8 regimes"),
+  pl7 = PCMTreePlot(testData_t2$treeWithRegimes[[145]], layout="fan", open.angle=2, size=.25) +
+    ggtitle("C. non-ultrametric / 2 regimes"),
+  pl8 = PCMTreePlot(testData_t2$treeWithRegimes[[169]], layout="fan", open.angle=2, size=.25) +
+    ggtitle("D. non-ultrametric / 8 regimes")
+)
+cowplot::plot_grid(plotlist = plList[1:4], nrow = 2, ncol=2)
+cowplot::plot_grid(plotlist = plList[5:8], nrow = 2, ncol=2)
+```
+
+```{r fig7-scatter-plots-simulations-t2, fig.width=9, fig.height=9, eval=evalFig7.3}
+data <- rbindlist(lapply(1:nrow(testData_t2), function(i) {
+  pl <- PCMPlotTraitData2D(
+    X = testData_t2$X[[i]][, 1:PCMTreeNumTips(testData_t2$treeWithRegimes[[i]])],
+    tree = testData_t2$treeWithRegimes[[i]])
+  cbind(pl$data, testData_t2[i, list(
+    rowId = c(i, rep(as.integer(NA), nrow(pl$data)-1)),
+    x0 = c(1.0, rep(as.double(NA), nrow(pl$data) - 1)), 
+    y0 = c(-1.0, rep(as.double(NA), nrow(pl$data) - 1)), 
+    treeType, treeSize, numClusters, clusterNodes, 
+    mapping, 
+    logLik = c(logLik[[1]], rep(as.double(NA), nrow(pl$data)-1)),
+    AIC = c(AIC[[1]], rep(as.double(NA), nrow(pl$data)-1)), 
+    nobs = c(nobs[[1]], rep(as.integer(NA), nrow(pl$data)-1)), 
+    df = c(df[[1]], rep(as.integer(NA), nrow(pl$data)-1)), 
+    IdMappingForClustering, IdParamForMapping, IdSimulationForParam)])
+}))
+
+data[, labLogLik:=sapply(logLik, function(ll) if(is.na(ll)) as.character(NA) else paste0("L: ", round(ll, 2)))]
+data[, labAIC:=sapply(AIC, function(a) if(is.na(a)) as.character(NA) else paste0("AIC: ", round(a, 2)))]
+
+data[, IdMappingLETTERS:=
+       paste0(IdMappingForClustering, ". ", 
+              sapply(mapping, function(m) do.call(paste0, as.list(LETTERS[m]))))]
+
+xlim <- c(-15, 15)
+ylim <- c(-15, 15)
+
+ggplot(data[treeType == "ultrametric" & treeSize=="small" & numClusters==2], aes(x, y)) + 
+  geom_point(aes(color = regime), size = .1, alpha = .5) +
+  geom_point(aes(x=x0, y=y0)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-14, y=12, label = rowId), hjust = "left") +
+  geom_text(aes(x=-13, y=6, label = labLogLik), size = 2.5, hjust = "left") +
+  #geom_text(aes(x=-12, y=2, label = labAIC), size = 3, hjust = "left") +
+  facet_grid(paste0("Parameter ", IdParamForMapping)+paste0("Simulation ", IdSimulationForParam)~paste0("Mapping ", IdMappingLETTERS)) +
+  theme_bw()
+ggplot(data[treeType == "ultrametric" & treeSize=="small" & numClusters==8], aes(x, y)) + 
+  geom_point(aes(color = regime), size = .1, alpha = .5) +
+  geom_point(aes(x=x0, y=y0)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-14, y=12, label = rowId), hjust = "left") +
+  geom_text(aes(x=-13, y=6, label = labLogLik), size = 2.5, hjust = "left") +
+  facet_grid(paste0("Parameter ", IdParamForMapping)+paste0("Simulation ", IdSimulationForParam)~paste0("Mapping ", IdMappingLETTERS)) +
+  theme_bw()
+ggplot(data[treeType == "ultrametric" & treeSize=="big" & numClusters==2], aes(x, y)) + 
+  geom_point(aes(color = regime), size = .1, alpha = .5) +
+  geom_point(aes(x=x0, y=y0)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-14, y=12, label = rowId), hjust = "left") +
+  geom_text(aes(x=-13, y=6, label = labLogLik), size = 2.5, hjust = "left") +
+  facet_grid(paste0("Parameter ", IdParamForMapping)+paste0("Simulation ", IdSimulationForParam)~paste0("Mapping ", IdMappingLETTERS)) +
+  theme_bw()
+ggplot(data[treeType == "ultrametric" & treeSize=="big" & numClusters==8], aes(x, y)) + 
+  geom_point(aes(color = regime), size = .1, alpha = .5) +
+  geom_point(aes(x=x0, y=y0)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-14, y=12, label = rowId), hjust = "left") +
+  geom_text(aes(x=-13, y=6, label = labLogLik), size = 2.5, hjust = "left") +
+  facet_grid(paste0("Parameter ", IdParamForMapping)+paste0("Simulation ", IdSimulationForParam)~paste0("Mapping ", IdMappingLETTERS)) +
+  theme_bw()
+
+
+
+
+ggplot(data[treeType == "non-ultrametric" & treeSize=="small" & numClusters==2], aes(x, y)) + 
+  geom_point(aes(color = regime, size=time, alpha = time)) +
+  geom_point(aes(x=x0, y=y0)) +
+  scale_size_continuous(range = c(0.05, .5)) +
+  scale_alpha_continuous(range = c(0.2, 0.75)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-14, y=12, label = rowId), hjust = "left") +
+  geom_text(aes(x=-13, y=6, label = labLogLik), size = 2.5, hjust = "left") +
+  facet_grid(paste0("Parameter ", IdParamForMapping)+paste0("Simulation ", IdSimulationForParam)~paste0("Mapping ", IdMappingLETTERS)) +
+  theme_bw()
+ggplot(data[treeType == "non-ultrametric" & treeSize=="small" & numClusters==8], aes(x, y)) + 
+  geom_point(aes(color = regime, size=time, alpha = time)) +
+  geom_point(aes(x=x0, y=y0)) +
+  scale_size_continuous(range = c(0.05, .5)) +
+  scale_alpha_continuous(range = c(0.2, 0.75)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-14, y=12, label = rowId), hjust = "left") +
+  geom_text(aes(x=-13, y=6, label = labLogLik), size = 2.5, hjust = "left") +
+  facet_grid(paste0("Parameter ", IdParamForMapping)+paste0("Simulation ", IdSimulationForParam)~paste0("Mapping ", IdMappingLETTERS)) +
+  theme_bw()
+ggplot(data[treeType == "non-ultrametric" & treeSize=="big" & numClusters==2], aes(x, y)) + 
+  geom_point(aes(color = regime, size=time, alpha = time)) +
+  geom_point(aes(x=x0, y=y0)) +
+  scale_size_continuous(range = c(0.05, .5)) +
+  scale_alpha_continuous(range = c(0.2, 0.75)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-14, y=12, label = rowId), hjust = "left") +
+  geom_text(aes(x=-13, y=6, label = labLogLik), size = 2.5, hjust = "left") +
+  facet_grid(paste0("Parameter ", IdParamForMapping)+paste0("Simulation ", IdSimulationForParam)~paste0("Mapping ", IdMappingLETTERS)) +
+  theme_bw()
+ggplot(data[treeType == "non-ultrametric" & treeSize=="big" & numClusters==8], aes(x, y)) + 
+  geom_point(aes(color = regime, size=time, alpha = time)) +
+  geom_point(aes(x=x0, y=y0)) +
+  scale_size_continuous(range = c(0.05, .5)) +
+  scale_alpha_continuous(range = c(0.2, 0.75)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-14, y=12, label = rowId), hjust = "left") +
+  geom_text(aes(x=-13, y=6, label = labLogLik), size = 2.5, hjust = "left") +
+  facet_grid(paste0("Parameter ", IdParamForMapping)+paste0("Simulation ", IdSimulationForParam)~paste0("Mapping ", IdMappingLETTERS)) +
+  theme_bw()
+
+```
+
+
+```{r fig7-scatter-plots-simulations-t3, fig.width=9, fig.height=9, eval=evalFig7.4}
+data <- rbindlist(lapply(1:nrow(testData_t3), function(i) {
+  pl <- PCMPlotTraitData2D(
+    X = testData_t3$X[[i]][, 1:PCMTreeNumTips(testData_t3$treeWithRegimes[[i]])],
+    tree = testData_t3$treeWithRegimes[[i]])
+  cbind(pl$data, testData_t3[i, list(rowId = c(i, rep(as.integer(NA), nrow(pl$data)-1)), treeType, treeSize, numClusters, clusterNodes, mapping, logLik, AIC, nobs, df, IdMappingForClustering, IdParamForMapping, IdSimulationForParam)])
+}))
+
+data[, IdMappingLETTERS:=
+       paste0(IdMappingForClustering, ". ", 
+              sapply(mapping, function(m) do.call(paste0, as.list(LETTERS[m]))))]
+
+xlim <- c(-15, 15)
+ylim <- c(-15, 15)
+
+ggplot(data[treeType == "ultrametric" & treeSize=="small" & numClusters==2], aes(x, y)) + 
+  geom_point(aes(color = regime), size = .05, alpha = .5) +
+  geom_point(x=-4, y=-5) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-12, y=12, label = rowId)) +
+  facet_grid(IdParamForMapping+IdSimulationForParam~IdMappingLETTERS) +
+  theme_bw()
+ggplot(data[treeType == "ultrametric" & treeSize=="small" & numClusters==8], aes(x, y)) + 
+  geom_point(aes(color = regime), size = .05, alpha = .5) +
+  geom_point(x=-4, y=-5) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-12, y=12, label = rowId)) +
+  facet_grid(IdParamForMapping+IdSimulationForParam~IdMappingLETTERS) +
+  theme_bw()
+ggplot(data[treeType == "ultrametric" & treeSize=="big" & numClusters==2], aes(x, y)) + 
+  geom_point(aes(color = regime), size = .05, alpha = .5) +
+  geom_point(x=-4, y=-5) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-12, y=12, label = rowId)) +
+  facet_grid(IdParamForMapping+IdSimulationForParam~IdMappingLETTERS) +
+  theme_bw()
+ggplot(data[treeType == "ultrametric" & treeSize=="big" & numClusters==8], aes(x, y)) + 
+  geom_point(aes(color = regime), size = .05, alpha = .5) +
+  geom_point(x=-4, y=-5) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-12, y=12, label = rowId)) +
+  facet_grid(IdParamForMapping+IdSimulationForParam~IdMappingLETTERS) +
+  theme_bw()
+
+
+
+
+ggplot(data[treeType == "non-ultrametric" & treeSize=="small" & numClusters==2], aes(x, y)) + 
+  geom_point(aes(color = regime, size=time, alpha = time)) +
+  geom_point(x=-4, y=-5) +
+  scale_size_continuous(range = c(0.01, .1)) +
+  scale_alpha_continuous(range = c(0.2, 0.75)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-12, y=12, label = rowId)) +
+  facet_grid(IdParamForMapping+IdSimulationForParam~IdMappingLETTERS) +
+  theme_bw()
+ggplot(data[treeType == "non-ultrametric" & treeSize=="small" & numClusters==8], aes(x, y)) + 
+  geom_point(aes(color = regime, size=time, alpha = time)) +
+  geom_point(x=-4, y=-5) +
+  scale_size_continuous(range = c(0.01, .1)) +
+  scale_alpha_continuous(range = c(0.2, 0.75)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-12, y=12, label = rowId)) +
+  facet_grid(IdParamForMapping+IdSimulationForParam~IdMappingLETTERS) +
+  theme_bw()
+ggplot(data[treeType == "non-ultrametric" & treeSize=="big" & numClusters==2], aes(x, y)) + 
+  geom_point(aes(color = regime, size=time, alpha = time)) +
+  geom_point(x=-4, y=-5) +
+  scale_size_continuous(range = c(0.01, .1)) +
+  scale_alpha_continuous(range = c(0.2, 0.75)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-12, y=12, label = rowId)) +
+  facet_grid(IdParamForMapping+IdSimulationForParam~IdMappingLETTERS) +
+  theme_bw()
+ggplot(data[treeType == "non-ultrametric" & treeSize=="big" & numClusters==8], aes(x, y)) + 
+  geom_point(aes(color = regime, size=time, alpha = time)) +
+  geom_point(x=-4, y=-5) +
+  scale_size_continuous(range = c(0.01, .1)) +
+  scale_alpha_continuous(range = c(0.2, 0.9)) +
+  scale_x_continuous(limits = xlim) +
+  scale_y_continuous(limits = ylim) +
+  geom_label(aes(x=-12, y=12, label = rowId)) +
+  facet_grid(IdParamForMapping+IdSimulationForParam~IdMappingLETTERS) +
+  theme_bw()
+
+```
+
+```{r table-summary-sim-results-t2, eval=FALSE}
+load("../local-data/ResultsTestData_t2/TestResultData_t2.RData")
+summaryTable <- testResultData[, {
+  maskTests <- !is.na(fpr) & !is.na(tpr)
+  numTests <- sum(maskTests)
+  list(
+    `#tests`=numTests, 
+    `Better AIC` = sum(AIC_Final[maskTests] - AIC_True[maskTests] <= 0)/numTests, 
+    fpr=sum(fpr[maskTests])/numTests, 
+    #`SE(fpr)`=sd(fpr[maskTests])/sqrt(numTests),
+    tpr=sum(tpr[maskTests])/numTests#, 
+    #`SE(tpr)`=sd(tpr[maskTests])/sqrt(numTests)
+    )
+},
+keyby=list(Crit.=crit2, N=factor(treeSize, levels=c("small", "big"), labels=c(318, 638)), 
+           `#regimes`=as.integer(numClusters),
+           `Tree-type`=factor(treeType, levels=c("ultrametric", "non-ultrametric")))][Crit. %in% c("Cluster", "OU process", "Correlated traits", "NonDiagonal H", "Asymetric H")]
+print.xtable(xtable(summaryTable), comment=FALSE, include.rownames = FALSE)
+
 ```
 
 ```{r fig8-plot-likelihoods-clades, fig.width=9, fig.height=9, eval=evalFig8}
@@ -1231,12 +1593,14 @@ regimesOrdered <- dtGridsMeansSamples[, list(regime=unique(regime)), keyby=ri][,
 
 
 ```{r fig9-1-force-fields-H-matrix, dev.args=list(colormodel="rgb"), dpi=600,  fig.width=9,fig.height=8, eval=evalFig9}
-ggplot(dtGridsMeansSamples[ri %in% c(2, 3, 10)]) + 
+ggplot(dtGridsMeansSamples[ri %in% c(1, 2, 3)]) + 
   geom_segment(aes(x=x, y=y, xend=x2, yend=y2, color=as.character(ri))) +
   geom_point(aes(x=x, y=y))+
   geom_point(aes(x=x2, y=y2), color="red", size=1) +
   stat_ellipse(aes(x=xs, y=ys, group=p, color=as.character(ri)), type="norm", alpha=0.5, na.rm=TRUE) +
   scale_color_manual(values = palette) +
+  #scale_x_continuous(limits = xlim) + 
+  #scale_y_continuous(limits = ylim) + 
   coord_fixed(xlim = xlim, ylim = ylim, ratio = 1) +
   xlab("lg(body-mass [g])") +
   ylab("lg(brain-mass [g])") +
@@ -1276,4 +1640,29 @@ pl2 <- ggplot(dtGridsMeansSamples[ri>6]) +
 #cowplot::plot_grid(pl1,pl2, nrow=1)
 pl1
 pl2
+```
+
+
+# Randomization test via shuffling data within regimes
+We are interested in whether the best fit to the mammal data has been informed from the phylogenetic  relationship (phenotype differences with respect to time) between the tips in each regime. If we shuffle the tip-values of all tips within a regime, that destroys any correlation between the differences in trait values in couples of tips with respect to their phylogenetic distance. At the same time, the marginal distribution of these tips (i.e. the body-brain-mass scatter plots) within the regimes will remain exactly the same. If the shuffling does not affect the AIC score significantly, this would imply that the fit ignores the phylogenetic correlation.
+```{r shuffle-clusters, eval=FALSE}
+tree <- attr(inferredModel, "tree")
+X <- attr(inferredModel, "X")
+
+AIC0 <- AIC(inferredModel)
+
+AIC_s <- sapply(1:100, function(n) {
+  AIC_si <- rep(0.0, PCMTreeNumUniqueRegimes(tree))
+  names(AIC_si) <- as.character(PCMTreeUniqueRegimes(tree))
+  for(i in PCMTreeUniqueRegimes(tree)) {
+    tips <- PCMTreeGetTipsInRegime(tree, i)
+    X_si <- X
+    X_si[, tips] <- X_si[, sample(tips)]
+    inferredModel_si <- inferredModel
+    attr(inferredModel_si, "X") <- X_si
+    AIC_si[i] <- AIC(inferredModel_si)
+  }  
+  AIC_si
+})
+
 ```

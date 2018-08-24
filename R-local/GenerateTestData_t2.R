@@ -145,7 +145,6 @@ PCMTreeSetLabels(treeFossilSmall)
 treeFossilSmall$edge.length <- treeFossilSmall$edge.length / max(PCMTreeNodeTimes(treeFossilSmall)) * 166.2
 PCMTreeSetDefaultRegime(treeFossilSmall, regime = 1)
 
-# this will generate an ultrametric tree with exactly 300 tips
 treeExtantSmall <- pbtree(n=318, scale=1, b = 1, d = 0.4, extant.only = TRUE)
 PCMTreeSetLabels(treeExtantSmall)
 # set the depth of the tree to the depth of the mammal tree (166.2)
@@ -159,7 +158,6 @@ PCMTreeSetLabels(treeFossilBig)
 treeFossilBig$edge.length <- treeFossilBig$edge.length / max(PCMTreeNodeTimes(treeFossilBig)) * 166.2
 PCMTreeSetDefaultRegime(treeFossilBig, regime = 1)
 
-# this will generate an ultrametric tree with exactly 300 tips
 treeExtantBig <- pbtree(n=638, scale=1, b = 1, d = 0.4, extant.only = TRUE)
 PCMTreeSetLabels(treeExtantBig)
 # set the depth of the tree to the depth of the mammal tree (166.2)
@@ -188,14 +186,16 @@ k <- 2
 testData_t2 <- rbindlist(
   list(
     data.table(
-      treeType = "extant-small",
+      treeType = "ultrametric",
+      treeSize = "small",
       tree = list(treeExtantSmall),
       numClusters = 2,
       clusterNodes = list(as.character(c(319, 499))),
       mapping = lapply(1:nRandomModelMappingsPerClustering, function(i) sample(1:length(simulatedModels), size = 2, replace = TRUE))
     ),
     data.table(
-      treeType = "extant-small",
+      treeType = "ultrametric",
+      treeSize= "small",
       tree = list(treeExtantSmall),
       numClusters = 8,
       clusterNodes = list(as.character(c(319, 499, 438, 360,
@@ -203,14 +203,16 @@ testData_t2 <- rbindlist(
       mapping = lapply(1:nRandomModelMappingsPerClustering, function(i) sample(1:length(simulatedModels), size = 8, replace = TRUE))
     ),
     data.table(
-      treeType = "fossil-small",
+      treeType = "non-ultrametric",
+      treeSize= "small",
       tree = list(treeFossilSmall),
       numClusters = 2,
       clusterNodes = list(as.character(c(319, 393))),
       mapping = lapply(1:nRandomModelMappingsPerClustering, function(i) sample(1:length(simulatedModels), size = 2, replace = TRUE))
     ),
     data.table(
-      treeType = "fossil-small",
+      treeType = "non-ultrametric",
+      treeSize= "small",
       tree = list(treeFossilSmall),
       numClusters = 8,
       clusterNodes = list(as.character(c(319, 393, 430, 484,
@@ -220,14 +222,16 @@ testData_t2 <- rbindlist(
 
     # big trees
     data.table(
-      treeType = "extant-big",
+      treeType = "ultrametric",
+      treeSize= "big",
       tree = list(treeExtantBig),
       numClusters = 2,
       clusterNodes = list(as.character(c(639, 1007))),
       mapping = lapply(1:nRandomModelMappingsPerClustering, function(i) sample(1:length(simulatedModels), size = 2, replace = TRUE))
     ),
     data.table(
-      treeType = "extant-big",
+      treeType = "ultrametric",
+      treeSize= "big",
       tree = list(treeExtantBig),
       numClusters = 8,
       clusterNodes = list(as.character(c(639, 1105, 1007, 817,
@@ -235,14 +239,16 @@ testData_t2 <- rbindlist(
       mapping = lapply(1:nRandomModelMappingsPerClustering, function(i) sample(1:length(simulatedModels), size = 8, replace = TRUE))
     ),
     data.table(
-      treeType = "fossil-big",
+      treeType = "non-ultrametric",
+      treeSize= "big",
       tree = list(treeFossilBig),
       numClusters = 2,
       clusterNodes = list(as.character(c(639, 883))),
       mapping = lapply(1:nRandomModelMappingsPerClustering, function(i) sample(1:length(simulatedModels), size = 2, replace = TRUE))
     ),
     data.table(
-      treeType = "fossil-big",
+      treeType = "non-ultrametric",
+      treeSize= "big",
       tree = list(treeFossilBig),
       numClusters = 8,
       clusterNodes = list(as.character(c(639, 685, 644, 641,
@@ -321,6 +327,20 @@ testData_t2[, AIC:=lapply(1:.N, function(i) {
 testData_t2[, nobs:=sapply(treeWithRegimes, PCMTreeNumTips)]
 testData_t2[, df:=sapply(model, PCMParamCount, TRUE,TRUE)]
 
+testData_t2[, IdMappingForClustering:=rep(
+  rep(1:nRandomModelMappingsPerClustering,
+      each=nSimulationsPerRandomParam*nRandomParamsPerMapping),
+  .N/nRandomModelMappingsPerClustering/nRandomParamsPerMapping/nSimulationsPerRandomParam)]
+
+testData_t2[, IdParamForMapping:=rep(
+  rep(1:nRandomParamsPerMapping,
+      each=nSimulationsPerRandomParam),
+  .N/nRandomParamsPerMapping/nSimulationsPerRandomParam)]
+
+testData_t2[, IdSimulationForParam:=rep(1:nSimulationsPerRandomParam,
+                                         .N/nSimulationsPerRandomParam)]
+
 # store the data within the package TestPCMFit
 devtools::use_data(testData_t2, overwrite = TRUE)
+
 

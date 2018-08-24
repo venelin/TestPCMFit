@@ -1,6 +1,6 @@
 
 
-RetrieveTrueFromTestData <- function(i) {
+RetrieveTrueFromTestData <- function(testData, i) {
   res <- list(
     tree = testData$tree[[i]],
     X = testData$X[[i]][, 1:PCMTreeNumTips(testData$tree[[i]])],
@@ -87,4 +87,26 @@ PlotCompareFitWithTrueTestData <- function(fitMappings, i, doPlotSearchHistory =
       NULL
     })
   plotlist
+}
+
+tpr <- function(pred, true) {
+  pred <- as.logical(pred)
+  true <- as.logical(true)
+  res <- sum(pred & true)/sum(true)
+  if(is.finite(res)) {
+    res
+  } else {
+    as.double(NA)
+  }
+}
+
+fpr <- function(pred, true) {
+  pred <- as.logical(pred)
+  true <- as.logical(true)
+  res <- sum(pred & !true)/sum(!true)
+  if(is.finite(res)) {
+    res
+  } else {
+    as.double(NA)
+  }
 }
